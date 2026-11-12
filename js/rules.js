@@ -143,9 +143,6 @@ export const EXPEDIENTE = [
   { k: 'pensiones', l: 'Constancia de afiliación al sistema de pensiones (ONP o AFP)' },
   { k: 'banco', l: 'Datos de cuenta bancaria para el pago de remuneraciones' },
   { k: 'foto', l: 'Fotografía tamaño carné' },
-  { k: 'f_datos', l: 'Ficha de Datos Personales (firmada por el colaborador)' },
-  { k: 'f_dolencia', l: 'Compromiso de Información de Evento o Dolencia Médica (archivo reservado)' },
-  { k: 'f_dj', l: 'DJ de prestación de servicios en otro centro del sector salud o empleador' },
 ];
 
 export { addMonths as addMonthsSafe } from './util.js';

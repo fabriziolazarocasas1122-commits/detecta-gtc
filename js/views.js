@@ -511,7 +511,7 @@ En Detecta Clínica creemos en la igualdad de oportunidades para todas las perso
     const rq = ctx.rq || {};
     const nombre = ctx.candSel?.nombre || '[NOMBRE]';
     const f = (x) => (x ? new Date(x + 'T12:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' }) : '[FECHA]');
-    const docs = (ctx.expedienteRows || []).filter((x) => !/Ficha de Datos|Compromiso|DJ de/.test(x)).map((x) => `• ${x}`).join('\n');
+    const docs = (ctx.expedienteRows || []).map((x) => `• ${x}`).join('\n');
     return `Asunto: ¡Bienvenido(a) a Detecta Clínica!
 
 Nos complace dar la bienvenida a ${nombre}, quien se incorpora a nuestro equipo como ${rq.puesto || '[PUESTO]'} del área de ${rq.area || '[ÁREA]'}. Su incorporación fortalece nuestro equipo con nuevas capacidades, conocimientos y perspectivas, y contribuye al cumplimiento de nuestros objetivos y a la mejora continua de la organización.
