@@ -119,13 +119,14 @@ export function validateForm(schema, data, ctx, onlySections = null) {
 
 /* ───────── Render ───────── */
 export function renderForm(opts) {
-  const { schema, form, ctx, user, states, onDiscrete, onText, generators = {}, showErrors = false, prefill } = opts;
+  const { schema, form, ctx, user, states, onDiscrete, onText, generators = {}, showErrors = false, prefill, only = null } = opts;
   const d = (form.data = form.data || {});
   const v = validateForm(schema, d, ctx);
   const root = h('div', { class: 'sheet', dataset: { form: schema.key } });
 
   schema.sections.forEach((sec, si) => {
     if (sec.show && !sec.show(d, ctx)) return;
+    if (only && !only.includes(sec.id)) return;
     const st = states(sec);
     if (st.editable && prefill) {
       sec.fields.forEach((f) => {
@@ -140,8 +141,7 @@ export function renderForm(opts) {
         h('div', { class: 'sec-titles' },
           h('h3', {}, sec.title),
           h('p', { class: 'sec-meta' },
-            st.editable ? `Completa: ${sec.by.map((r) => ROLES[r]).join(' / ')}` : st.reason,
-            sec.nuevo ? h('span', { class: 'tag tag-new', title: 'Campo añadido para cumplir el procedimiento' }, `Nuevo · ${sec.nuevo}`) : null)),
+            st.editable ? `Completa: ${sec.by.map((r) => ROLES[r]).join(' / ')}` : st.reason)),
         h('span', { class: `sec-state st-${status}` }, status === 'ok' ? 'Completo' : status === 'wait' ? 'En espera' : `${bs.missing} pendiente${bs.missing === 1 ? '' : 's'}`)),
       sec.note ? h('p', { class: 'sec-note' }, sec.note) : null,
     );
@@ -161,7 +161,7 @@ function fieldWrap(f, inner, { problems, showErrors, extraClass = '' }) {
   const req = f._req;
   return h('div', { class: `fld w-${f.w || 'full'} t-${f.t} ${extraClass} ${prob && showErrors ? 'has-err' : ''}`, dataset: { k: f.k } },
     f.label ? h('label', { class: 'lbl', for: `f_${f.k}` }, f.label, req ? h('span', { class: 'req', title: 'Obligatorio', 'aria-label': 'obligatorio' }) : null,
-      f.nuevo ? h('span', { class: 'tag tag-new', title: 'Campo añadido para cumplir el procedimiento' }, 'Nuevo') : null) : null,
+) : null,
     inner,
     f.hint ? h('p', { class: 'hint' }, f.hint) : null,
     h('p', { class: 'err', role: 'alert' }, prob && showErrors ? prob : ''));

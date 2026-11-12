@@ -12,6 +12,7 @@ import {
   TIPOS_PUESTO,
 } from './rules.js';
 import { openSignModal, confirmModal } from './signature.js';
+import { detecto, detectoSays, celebrate } from './detecto.js';
 
 const go = (hash) => { location.hash = hash; };
 let saveTimer = null;
@@ -42,7 +43,7 @@ export function shell(content, active) {
           h('span', { class: `ico ico-${icon}`, 'aria-hidden': 'true' }), h('span', {}, label), n ? h('span', { class: 'badge' }, n) : null))),
       h('div', { class: 'whoami' },
         h('label', { for: 'actas', class: 'lbl' }, 'Actuar como (demostración)'),
-        h('select', { id: 'actas', class: 'inp', onchange: (e) => { store.setCurrentUser(e.target.value); route(); } },
+        h('select', { id: 'actas', class: 'inp', onchange: (e) => { store.setCurrentUser(e.target.value); route(); window.scrollTo(0, 0); } },
           Object.entries(ROLES).map(([r, rl]) => h('optgroup', { label: rl }, store.users().filter((x) => x.role === r).map((x) => h('option', { value: x.id, selected: x.id === u.id }, x.name))))),
         h('p', { class: 'muted small' }, `${u.cargo}`),
         h('p', { id: 'savestate', class: 'savestate' }, 'Guardado automático activo'))),
@@ -62,11 +63,13 @@ export function viewInbox() {
 
   return h('div', { class: 'page' },
     h('header', { class: 'hero' },
-      h('div', {},
-        h('h1', {}, `${saludo}, ${u.name.split(' ')[0]}.`),
-        h('p', { class: 'lead' }, mine.length + movs.length
-          ? `Tienes ${mine.length + movs.length} documento${mine.length + movs.length === 1 ? '' : 's'} esperando tu acción como ${ROLES[u.role]}.`
-          : `No tienes documentos pendientes como ${ROLES[u.role]}.`)),
+      h('div', { class: 'hero-hi' },
+        detecto(mine.length + movs.length ? 'idle' : 'happy', 'hero-bot'),
+        h('div', {},
+          h('h1', {}, `${saludo}, ${u.name.split(' ')[0]}.`),
+          h('p', { class: 'lead' }, mine.length + movs.length
+            ? `Soy Detecto. Tienes ${mine.length + movs.length} ${mine.length + movs.length === 1 ? 'documento' : 'documentos'} esperándote. Empieza por el primero: te guío paso a paso.`
+            : 'Soy Detecto. Estás al día: no tienes documentos pendientes.'))),
       h('dl', { class: 'pulse-strip' },
         h('div', {}, h('dt', {}, 'Procesos abiertos'), h('dd', {}, abiertos.length)),
         h('div', { class: riesgo.length ? 'alert' : '' }, h('dt', {}, 'En riesgo de plazo'), h('dd', {}, riesgo.length)),
@@ -93,14 +96,14 @@ function taskItem(c) {
     h('span', { class: 'task-code' }, c.id),
     h('span', { class: 'task-main' }, h('strong', {}, d.puesto || 'Puesto sin nombre'), h('span', { class: 'muted' }, `${d.area || 'Área por definir'} · ${motivoLabel(d.motivo)}`)),
     h('span', { class: 'task-stage' }, h('span', { class: 'stage-dot' }), `${stg?.l || ''}: ${st.note}`),
-    slaChip(pl)));
+    slaChip(pl), h('span', { class: 'go' }, 'Continuar')));
 }
 function movItem(m) {
   const d = m.form.data;
   return h('li', {}, h('a', { class: 'task', href: `#/movimiento/${m.id}` },
     h('span', { class: 'task-code' }, m.id),
     h('span', { class: 'task-main' }, h('strong', {}, d.colaborador || 'Colaborador por registrar'), h('span', { class: 'muted' }, d.tipo || 'Movimiento interno')),
-    h('span', { class: 'task-stage' }, h('span', { class: 'stage-dot' }), movStage(m).label), h('span', {})));
+    h('span', { class: 'task-stage' }, h('span', { class: 'stage-dot' }), movStage(m).label), h('span', {}), h('span', { class: 'go' }, 'Continuar')));
 }
 
 function slaChip(pl) {
@@ -260,7 +263,7 @@ export function viewCase(id, tab, sub) {
           d.atraccion ? h('span', { class: 'tag' }, `Atracción ${d.atraccion.toLowerCase()}`) : null,
           null)),
       h('div', { class: 'case-side' }, slaChip(plazo(caseMeta(caso))),
-        st.closed ? h('span', { class: `tag tag-${st.closed}` }, st.note) : h('p', { class: 'next' }, h('span', { class: 'muted' }, 'Siguiente: '), `${st.note} · `, h('strong', {}, st.roles.map((r) => ROLES[r]).join(' / '))))),
+        st.closed ? h('span', { class: `closed-badge tag tag-${st.closed}` }, st.closed === 'completado' ? detecto('happy', 'tiny') : null, st.note) : h('p', { class: 'next' }, h('span', { class: 'muted' }, 'Siguiente: '), `${st.note} · `, h('strong', {}, st.roles.map((r) => ROLES[r]).join(' / '))))),
     h('div', { class: 'case-body' },
       h('aside', { class: 'case-rail' }, ribbon(caso, tab, (k) => pick(k))),
       h('div', { class: 'case-main' },
@@ -275,65 +278,165 @@ function history(entity) {
 }
 
 /* ───────── Panel de formulario (reutilizable) ───────── */
-function formPanel({ schema, form, entity, caso, ctxFn, rerender, extraTop, extraBottom, cand }) {
+const UI = new WeakMap();
+const uiOf = (form) => {
+  if (!UI.has(form)) UI.set(form, new Map());
+  const byUser = UI.get(form); const id = store.currentUser().id;
+  if (!byUser.has(id)) byUser.set(id, { mode: null, step: null, showErrors: false });
+  return byUser.get(id);
+};
+const plural = (n, a, b) => (n === 1 ? a : b);
+
+function formPanel({ schema, form, entity, caso, ctxFn, rerender, extraTop, cand }) {
   const u = store.currentUser();
-  let showErrors = !!form._showErrors;
   const host = h('div', { class: 'panel form-panel' });
   if (schema.confidential && !schema.visibleTo.includes(u.role)) {
     host.append(h('div', { class: 'empty' }, h('p', {}, 'Documento confidencial. Solo lo ven GTC, la jefatura solicitante y los evaluadores definidos en el Anexo 2.')));
     return host;
   }
+  const ui = uiOf(form);
+  const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const draw = () => {
     const ctx = ctxFn();
     const states = (sec) => sectionState(schema, form, sec, u, ctx, caso);
-    const onText = () => { saveSoon(); refreshCalcs(host, schema, form.data, ctx); updateMeter(); clearErr(); };
-    const onDiscrete = (k) => { saveSoon(); hooks(schema, form, entity, k); const y = window.scrollY; draw(); window.scrollTo(0, y); };
-    const sheet = renderForm({ schema, form, ctx, user: u, states, onText, onDiscrete, showErrors, prefill: resolvePrefill });
-    const meter = h('div', { class: 'meter', role: 'status' });
-    function editableIds() { return schema.sections.filter((s) => (!s.show || s.show(form.data, ctx)) && states(s).editable).map((s) => s.id); }
-    function updateMeter() {
-      const ids = editableIds();
-      if (!ids.length) { meter.hidden = true; return; }
-      meter.hidden = false;
-      const v = validateForm(schema, form.data, ctx, ids);
-      const pend = v.missing + v.hard.length;
-      const pct = v.total ? Math.round(((v.total - Math.min(v.missing, v.total)) / v.total) * 100) : 100;
-      meter.replaceChildren(
-        h('span', { class: 'meter-bar' }, h('span', { style: `width:${pct}%` })),
-        h('span', { class: 'meter-txt' }, pend ? `Te falta${pend === 1 ? '' : 'n'} ${pend} dato${pend === 1 ? '' : 's'} obligatorio${pend === 1 ? '' : 's'} para poder firmar` : 'Tus secciones están completas. Ya puedes firmar.'),
-        pend ? h('button', { class: 'btn btn-sm btn-primary', onclick: () => jumpToFirst(ids) }, 'Ir al siguiente pendiente') : h('a', { class: 'btn btn-sm btn-lime', href: '#firmas' }, 'Ir a firmas'));
+    const data = form.data || (form.data = {});
+    const visible = schema.sections.filter((sec) => !sec.show || sec.show(data, ctx));
+    const mine = visible.filter((sec) => states(sec).editable);
+    const vAll = validateForm(schema, data, ctx);
+    const pendingSec = (sec) => { const b = vAll.bySection[sec.id]; return !!b && (b.missing > 0 || b.problems.some((p) => !p.missing && !p.soft)); };
+    const minePending = mine.filter(pendingSec);
+    const mySigs = activeSignatures(schema, data).filter((sd) => sigRoles(sd, data).includes(u.role) && !form.signatures?.[sd.key]);
+    const signable = mySigs.find((sd) => canSign(schema, form, sd, u, ctx, caso).ok);
+    const after = () => (rerender ? rerender() : draw());
+    const doSign = (sd) => signFlow({ schema, form, sdef: sd, entity, caso, ctx, after });
+
+    if (ui.mode === null) ui.mode = minePending.length ? 'guided' : 'full';
+    if (ui.mode === 'guided' && !mine.length) ui.mode = 'full';
+
+    const onText = () => { saveSoon(); refreshCalcs(host, schema, data, ctx); if (ui.mode === 'full') updateMeter(); };
+    const onDiscrete = () => { saveSoon(); const y = window.scrollY; draw(); window.scrollTo(0, y); };
+
+    const obs = (form.observaciones || []).length && !Object.keys(form.signatures || {}).length ? h('div', { class: 'obs' },
+      h('strong', {}, 'Te devolvieron este documento con observaciones'),
+      h('ul', {}, form.observaciones.slice(0, 2).map((o) => h('li', {}, h('span', { class: 'muted' }, `${o.by}: `), o.text)))) : null;
+
+    /* ── Modo guiado: un paso a la vez ── */
+    if (ui.mode === 'guided') {
+      if (ui.step === null || ui.step >= mine.length) ui.step = Math.max(0, mine.indexOf(minePending[0] || mine[0]));
+      const sec = mine[ui.step];
+      const sv = validateForm(schema, data, ctx, [sec.id]);
+      const left = sv.missing + sv.hard.length;
+      const last = ui.step === mine.length - 1;
+      const sheet = renderForm({ schema, form, ctx, user: u, states, onText, onDiscrete, showErrors: ui.showErrors, prefill: resolvePrefill, only: [sec.id] });
+      const goTo = (i) => { ui.step = i; ui.showErrors = false; draw(); host.scrollIntoView({ behavior: reduce() ? 'auto' : 'smooth', block: 'start' }); };
+      const next = () => {
+        const chk = validateForm(schema, data, ctx, [sec.id]);
+        if (chk.missing || chk.hard.length) {
+          ui.showErrors = true; draw();
+          const first = [...chk.problems.keys()][0];
+          const el = first && (host.querySelector(`[data-k="${CSS.escape(first)}"]`) || host.querySelector(`[data-k="${CSS.escape(first.split('.')[0])}"]`));
+          if (el) { el.scrollIntoView({ behavior: reduce() ? 'auto' : 'smooth', block: 'center' }); el.querySelector('input,select,textarea')?.focus({ preventScroll: true }); }
+          return;
+        }
+        store.persist(); flashSaved();
+        if (!last) return goTo(ui.step + 1);
+        const stillPending = mine.filter((x) => validateForm(schema, data, ctx, [x.id]).missing > 0);
+        if (stillPending.length) return goTo(mine.indexOf(stillPending[0]));
+        ui.mode = 'full'; ui.showErrors = false; draw();
+        const sd = mySigs.find((x) => canSign(schema, form, x, u, ctxFn(), caso).ok);
+        if (sd) doSign(sd); else { celebrateSmall(); host.querySelector('#firmas')?.scrollIntoView({ block: 'start' }); }
+      };
+      const stepper = h('ol', { class: 'stepper', 'aria-label': 'Pasos' }, mine.map((x, i) => h('li', { class: i === ui.step ? 'now' : pendingSec(x) ? '' : 'done' },
+        h('button', { type: 'button', onclick: () => goTo(i), 'aria-current': i === ui.step ? 'step' : false }, h('span', { class: 'st-n' }, pendingSec(x) || i === ui.step ? i + 1 : '✓'), h('span', { class: 'st-t' }, x.title)))));
+      host.replaceChildren(...[
+        docHeader(schema, entity, cand, true),
+        obs,
+        detectoSays({ mood: left ? 'think' : 'happy', title: `Paso ${ui.step + 1} de ${mine.length}: ${sec.title}`,
+          text: left ? `${plural(left, 'Falta 1 dato obligatorio', `Faltan ${left} datos obligatorios`)} en este paso. Los obligatorios tienen un punto celeste.` : (last ? 'Este paso está listo. Al terminar te pido tu firma.' : 'Este paso está listo. Sigamos.') }),
+        mine.length > 1 ? stepper : null,
+        extraTop ? extraTop(ctx, draw) : null,
+        sheet,
+        h('div', { class: 'wizard-nav' },
+          ui.step > 0 ? h('button', { class: 'btn btn-ghost', onclick: () => goTo(ui.step - 1) }, 'Atrás') : h('span'),
+          h('button', { class: 'btn btn-link', onclick: () => { ui.mode = 'full'; ui.showErrors = false; draw(); } }, 'Ver el formato completo'),
+          h('button', { class: 'btn btn-primary btn-big', onclick: next }, last ? (mySigs.length ? 'Terminar y firmar' : 'Terminar') : 'Guardar y seguir')),
+      ].filter(Boolean));
+      return;
     }
-    function clearErr() { /* los errores se recalculan al redibujar */ }
-    function jumpToFirst(ids) {
-      showErrors = form._showErrors = true;
-      draw();
-      const v = validateForm(schema, form.data, ctx, ids);
-      const first = [...v.problems.keys()][0];
-      const el = first && (host.querySelector(`[data-k="${CSS.escape(first)}"]`) || host.querySelector(`[data-k="${CSS.escape(first.split('.')[0])}"]`));
-      if (el) { el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' }); const i = el.querySelector('input,select,textarea'); i?.focus({ preventScroll: true }); }
+
+    /* ── Formato completo ── */
+    const sheet = renderForm({ schema, form, ctx, user: u, states, onText, onDiscrete, showErrors: ui.showErrors, prefill: resolvePrefill });
+    const meter = h('div', { class: 'meter', role: 'status' });
+    function updateMeter() {
+      const ids = mine.map((x) => x.id);
+      const v = ids.length ? validateForm(schema, data, ctx, ids) : null;
+      const pend = v ? v.missing + v.hard.length : 0;
+      if (!pend) { meter.hidden = true; return; }
+      meter.hidden = false;
+      const pct = v.total ? Math.round(((v.total - Math.min(v.missing, v.total)) / v.total) * 100) : 100;
+      meter.replaceChildren(h('span', { class: 'meter-bar' }, h('span', { style: `width:${pct}%` })),
+        h('span', { class: 'meter-txt' }, `${plural(pend, 'Falta 1 dato obligatorio', `Faltan ${pend} datos obligatorios`)}`),
+        h('button', { class: 'btn btn-sm btn-primary', onclick: () => { ui.mode = 'guided'; ui.step = null; draw(); } }, 'Completar paso a paso'));
     }
     updateMeter();
 
-    const obs = (form.observaciones || []).length ? h('div', { class: 'obs' },
-      h('strong', {}, 'Observaciones por subsanar'),
-      h('ul', {}, form.observaciones.slice(0, 3).map((o) => h('li', {}, h('span', { class: 'muted' }, `${o.by} (${o.cargo}), ${fmtDate(o.at, true)}: `), o.text)))) : null;
+    let card;
+    const conf = conformidad(schema, form);
+    if (caso?.estadoFinal) card = detectoSays({ mood: 'worried', title: 'Este expediente está cerrado', text: 'Puedes revisarlo, pero ya no admite cambios.' });
+    else if (minePending.length) card = detectoSays({ mood: 'think', title: `Te toca completar ${minePending.length} ${plural(minePending.length, 'sección', 'secciones')}`, text: 'Te llevo paso a paso, solo con lo que te corresponde.',
+      actions: [h('button', { class: 'btn btn-primary', onclick: () => { ui.mode = 'guided'; ui.step = null; draw(); } }, 'Completar paso a paso')] });
+    else if (signable) card = detectoSays({ mood: 'happy', title: 'Todo está completo. Solo falta tu firma', text: sigLabel(signable, data),
+      actions: [h('button', { class: 'btn btn-primary', onclick: () => doSign(signable) }, signable.decision ? 'Revisar y decidir' : 'Firmar ahora')] });
+    else if (mySigs.length) card = detectoSays({ mood: 'idle', title: 'Tu firma viene después', text: canSign(schema, form, mySigs[0], u, ctx, caso).reason });
+    else if (conf.completa) card = detectoSays({ mood: 'happy', title: 'Documento cerrado con doble conformidad', text: 'Todas las firmas están completas y el contenido quedó sellado.' });
+    else {
+      const nx = activeSignatures(schema, data).find((sd) => !form.signatures?.[sd.key]);
+      card = detectoSays({ mood: 'idle', title: 'No tienes nada pendiente aquí', text: nx ? `Ahora le toca a: ${sigRoles(nx, data).map((r) => ROLES[r]).join(' / ')} (${sigLabel(nx, data)}).` : '' });
+    }
 
     host.replaceChildren(...[
       docHeader(schema, entity, cand),
+      card, obs,
+      extraTop ? extraTop(ctx, draw) : null,
       schema.intro ? h('p', { class: 'intro' }, schema.intro) : null,
-      obs, extraTop ? extraTop(ctx, draw) : null,
       sheet,
-      extraBottom ? extraBottom(ctx, draw) : null,
-      signaturesBlock({ schema, form, entity, caso, ctx, onNeedFields: (ids) => jumpToFirst(ids), redraw: () => { rerender ? rerender() : draw(); } }),
+      signaturesBlock({ schema, form, caso, ctx, doSign, onNeedFields: () => { ui.mode = 'guided'; ui.step = null; draw(); } }),
       meter].filter(Boolean));
   };
   draw();
   return host;
 }
 
-function docHeader(schema, entity, cand) {
-  return h('div', { class: 'doc-head' },
+function celebrateSmall() { toast('¡Listo! Tus datos quedaron guardados.'); }
+
+async function signFlow({ schema, form, sdef, entity, caso, ctx, after }) {
+  const u = store.currentUser();
+  const data = form.data || {};
+  const chk = canSign(schema, form, sdef, u, ctx, caso);
+  if (!chk.ok) { toast(chk.reason, 'warn'); return; }
+  const isTablet = sdef.tablet && u.role !== 'colaborador';
+  const cdef = schema.conformidad;
+  const confBefore = conformidad(schema, form).completa;
+  const r = await openSignModal({
+    title: sigLabel(sdef, data), signerLabel: isTablet ? 'Firma en tablet del colaborador, en presencia de GTC' : `${u.name} · ${u.cargo}`,
+    user: u, decisionOpts: sdef.decision, tablet: isTablet, savedSig: isTablet ? null : u.firma,
+    declaration: sdef.key === cdef.entrega ? cdef.textoEntrega : sdef.key === cdef.recibe ? cdef.textoRecibe : 'Revisé el contenido de este documento y doy mi conformidad.',
+  });
+  if (!r) return;
+  if (r.saveAsMine) store.saveUser({ ...u, firma: r.img });
+  const me = store.currentUser();
+  const signer = isTablet ? { ...me, id: `tablet:${me.id}`, name: r.signerName, cargo: 'Firmado en tablet · registrado por ' + me.name } : me;
+  await sign({ schema, form, sdef, user: signer, img: r.img, decision: r.decision, comment: r.comment, ctx, entity });
+  after();
+  if (r.decision === 'Observado') toast('Lo devolviste con observaciones. Quien lo llenó verá tu comentario.', 'warn');
+  else if (r.decision === 'Desaprobado') toast('Vacante desaprobada. El proceso terminó.', 'warn');
+  else if (!confBefore && conformidad(schema, form).completa) celebrate({ title: '¡Doble conformidad completa!', text: `${schema.title} quedó cerrado y sellado.` });
+  else toast('Firma registrada. Le avisamos al siguiente responsable en su bandeja.');
+}
+
+function docHeader(schema, entity, cand, compact = false) {
+  return h('div', { class: `doc-head ${compact ? 'doc-head-compact' : ''}` },
     h('img', { src: 'assets/isotipo.png', alt: '', class: 'doc-iso' }),
     h('div', { class: 'doc-title' }, h('h2', {}, schema.title), h('p', {}, cand ? `Candidato: ${cand.nombre}` : `Expediente ${entity.id}`, ' · ', h('a', { href: `#/imprimir/${entity.forms ? 'caso' : 'mov'}/${entity.id}/${schema.key}${cand ? '/' + cand.dni : ''}`, target: '_blank', rel: 'noopener' }, 'Versión imprimible'))),
     h('dl', { class: 'doc-code' },
@@ -345,7 +448,7 @@ function docHeader(schema, entity, cand) {
 function hooks() { /* reservado para efectos de campos */ }
 
 /* ───────── Firmas y doble conformidad ───────── */
-function signaturesBlock({ schema, form, entity, caso, ctx, onNeedFields, redraw }) {
+function signaturesBlock({ schema, form, caso, ctx, doSign, onNeedFields }) {
   const u = store.currentUser();
   const data = form.data || {};
   const act = activeSignatures(schema, data);
@@ -371,19 +474,9 @@ function signaturesBlock({ schema, form, entity, caso, ctx, onNeedFields, redraw
     return h('figure', { class: `seal ${mine ? 'mine' : ''} ${isConf ? 'conf' : ''}` },
       h('figcaption', {}, sigLabel(s, data)),
       h('div', { class: 'seal-empty' }, h('span', {}, roles.map((r) => ROLES[r]).join(' / '))),
-      mine ? h('button', { class: `btn ${chk.ok ? 'btn-primary' : 'btn-ghost'} btn-sm`, onclick: async () => {
-        if (!chk.ok) { toast(chk.reason, 'warn'); if (chk.incomplete) onNeedFields(s.requires); return; }
-        const isTablet = s.tablet && u.role !== 'colaborador';
-        const r = await openSignModal({
-          title: sigLabel(s, data), signerLabel: isTablet ? 'Firma en tablet del nuevo colaborador, en presencia de GTC' : `${u.name} · ${u.cargo}`,
-          user: u, decisionOpts: s.decision, tablet: isTablet,
-          declaration: s.key === cdef.entrega ? cdef.textoEntrega : s.key === cdef.recibe ? cdef.textoRecibe : 'Declaro que revisé el contenido de este documento y doy mi conformidad.',
-        });
-        if (!r) return;
-        const signer = isTablet ? { ...u, id: `tablet:${u.id}`, name: r.signerName, cargo: 'Firmado en tablet · registrado por ' + u.name } : u;
-        await sign({ schema, form, sdef: s, user: signer, img: r.img, decision: r.decision, comment: r.comment, ctx, entity });
-        toast(r.decision === 'Observado' ? 'Documento observado: vuelve a borrador para subsanar.' : r.decision === 'Desaprobado' ? 'Vacante desaprobada. Proceso concluido.' : 'Firma registrada.', r.decision && r.decision !== 'Aprobado' ? 'warn' : 'ok');
-        redraw();
+      mine ? h('button', { class: `btn ${chk.ok ? 'btn-primary' : 'btn-ghost'} btn-sm`, onclick: () => {
+        if (!chk.ok) { toast(chk.reason, 'warn'); if (chk.incomplete) onNeedFields(); return; }
+        doSign(s);
       } }, 'Firmar') : null,
       h('p', { class: 'seal-why' }, chk.ok ? (mine ? 'Disponible para tu firma.' : 'Esperando firma.') : chk.reason));
   }));
@@ -398,7 +491,7 @@ function signaturesBlock({ schema, form, entity, caso, ctx, onNeedFields, redraw
       half('Quien entrega', conf.entrega, cdef.textoEntrega, sigName(cdef.entrega)),
       h('span', { class: 'conf-knot', 'aria-hidden': 'true' }),
       half('Quien recibe y valida', conf.recibe, cdef.textoRecibe, sigName(cdef.recibe))),
-    h('p', { class: 'muted small' }, 'Cada firma exige trazo manuscrito, nombre confirmado y declaración expresa. El documento solo se cierra con ambas conformidades y queda sellado con una huella SHA-256 que detecta cualquier cambio posterior.'));
+    h('p', { class: 'muted small' }, 'El documento se cierra solo con ambas conformidades. Cada firma sella el contenido: si alguien lo cambia después, la firma lo delata.'));
 
   return h('section', { class: 'firmas', id: 'firmas' }, h('h3', {}, 'Firmas y autorizaciones'), seals, confEl);
 }
@@ -459,7 +552,8 @@ function fichasList(caso) {
           if (!(await confirmModal({ title: 'Cerrar el proceso de selección', body: `Se registrará a ${c.nombre} como candidato seleccionado y se detendrá el plazo del Anexo 5. Las fichas quedan archivadas en el expediente.`, ok: 'Cerrar proceso' }))) return;
           caso.seleccionado = { ...c, at: new Date().toISOString(), by: u.name };
           caso.fechas.cierre = caso.seleccionado.at;
-          store.log(caso, u, `Cerró el proceso: candidato seleccionado ${c.nombre}.`); store.persist(); toast('Proceso cerrado.'); route();
+          store.log(caso, u, `Cerró el proceso: candidato seleccionado ${c.nombre}.`); store.persist(); route();
+          celebrate({ big: true, title: '¡Procedimiento completo!', text: `${c.nombre} fue seleccionado(a) para ${rq.puesto}. Todos los formatos tienen su doble conformidad.` });
         } }, 'Cerrar proceso con este candidato')));
     } else if (cands.length && cands.every(descartado)) {
       cierre = h('div', { class: 'obs' }, h('strong', {}, 'Ningún candidato de la terna resultó apto.'), h('p', {}, 'Registre nuevos candidatos para continuar la evaluación.'));

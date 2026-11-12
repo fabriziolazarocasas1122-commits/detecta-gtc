@@ -19,8 +19,12 @@ El análisis campo por campo y las inconsistencias encontradas están en [`docs/
 
 ## Qué hace
 
+- **Detecto, el asistente.** Un robot con los colores de la clínica que le dice a cada persona qué le toca hacer y celebra cuando un documento queda con doble conformidad o cuando se completa el procedimiento.
+- **Modo guiado.** Quien debe llenar un formato lo hace un paso a la vez, viendo solo las secciones que le corresponden. Al terminar, la plataforma le pide la firma de inmediato.
+- **Firma guardada.** La firma se dibuja una vez y se guarda; las siguientes veces basta con confirmar.
+
 - **Llenado obligatorio.** Ningún formato se puede firmar si falta un campo obligatorio. Los campos condicionales (por ejemplo, “¿a quién reemplaza?”) se exigen solo cuando aplican. Un medidor muestra cuántos datos faltan y lleva al siguiente pendiente.
-- **Firmas manuscritas digitales.** Se firman en pantalla con mouse, dedo o lápiz. Cada firma exige además escribir el nombre completo y aceptar una declaración.
+- **Firmas manuscritas digitales.** Se firman en pantalla con mouse, dedo o lápiz, y cada firma incluye una declaración expresa de conformidad.
 - **Doble conformidad.** Cada documento define quién **entrega** y quién **recibe y valida**; solo se cierra con ambas firmas. Una misma persona no puede firmar dos casilleros del mismo formato.
 - **Integridad.** Cada firma guarda una huella SHA-256 del contenido que respalda. Si alguien altera los datos después, la firma aparece como “Contenido alterado”. Las secciones firmadas quedan bloqueadas.
 - **Flujo automático por motivo.** Reemplazo y suplencia van directo a GTC; ampliación y puesto nuevo pasan por Dirección (DA o DM según la categoría) y Gerencia General. “Observado” devuelve el documento a borrador con el comentario; “Desaprobado” cierra el expediente.
