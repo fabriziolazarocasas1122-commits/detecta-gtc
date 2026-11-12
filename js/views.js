@@ -5,11 +5,11 @@ import { FORMS } from './schemas.js';
 import { renderForm, validateForm, refreshCalcs } from './engine.js';
 import {
   buildCtx, resolvePrefill, activeSignatures, sigLabel, sigRoles, canSign, sign, verifySignature, conformidad,
-  sectionState, STAGES, stageOf, ensureForm, ensureFicha, pendingFor, pendingMovs, movStage, reiniciarSeleccion,
+  sectionState, STAGES, stageOf, ensureForm, ensureFicha, pendingFor, pendingMovs, movStage, fichasAptas,
 } from './workflow.js';
 import {
-  ROLES, CONFIG, motivoLabel, plazo, GRUPOS_OCUP, requiereInfocorp, fuentePrimaria, esAsistencial, calcularFicha,
-  TIPOS_PUESTO, AREAS_INFOCORP,
+  ROLES, CONFIG, motivoLabel, plazo, GRUPOS_OCUP, calcularFicha,
+  TIPOS_PUESTO,
 } from './rules.js';
 import { openSignModal, confirmModal } from './signature.js';
 
@@ -217,12 +217,10 @@ function ribbon(caso, activeTab, onPick) {
 function formAvailable(caso, key) {
   if (key === 'RQ') return true;
   const st = stageOf(caso);
-  const order = ['rq', 'aprob', 'gtc', 'perfil', 'recl', 'entrev', 'ing', 'fin'];
+  const order = ['rq', 'aprob', 'gtc', 'perfil', 'entrev', 'fin'];
   const at = order.indexOf(st.k);
   if (key === 'PERFIL') return caso.forms.RQ.data.motivo === 'puesto_nuevo' && at >= order.indexOf('perfil');
-  if (key === 'RECL') return at >= order.indexOf('recl');
   if (key === 'FICHA') return at >= order.indexOf('entrev');
-  if (key === 'ING') return at >= order.indexOf('ing');
   return false;
 }
 
@@ -238,9 +236,7 @@ export function viewCase(id, tab, sub) {
 
   const tabs = [['RQ', 'Requerimiento']];
   if (formAvailable(caso, 'PERFIL')) tabs.push(['PERFIL', 'Perfil del puesto']);
-  if (formAvailable(caso, 'RECL')) tabs.push(['RECL', 'Convocatoria y terna']);
   if (formAvailable(caso, 'FICHA')) tabs.push(['FICHA', 'Entrevistas']);
-  if (formAvailable(caso, 'ING')) tabs.push(['ING', 'Ingreso']);
   tabs.push(['HIST', 'Historial']);
 
   const pick = (k, s2) => go(`#/caso/${id}/${k}${s2 ? '/' + s2 : ''}`);
@@ -249,7 +245,7 @@ export function viewCase(id, tab, sub) {
   else if (tab === 'FICHA') panel = sub ? fichaPanel(caso, sub) : fichasList(caso);
   else {
     const form = ensureForm(caso, tab);
-    panel = formPanel({ schema: FORMS[tab], form, entity: caso, caso, ctxFn: () => buildCtx(caso, tab), rerender: () => route(), extraTop: tab === 'ING' ? ingresoExtras(caso) : null });
+    panel = formPanel({ schema: FORMS[tab], form, entity: caso, caso, ctxFn: () => buildCtx(caso, tab), rerender: () => route() });
   }
 
   return h('div', { class: 'page page-case' },
@@ -262,8 +258,7 @@ export function viewCase(id, tab, sub) {
           d.motivo ? h('span', { class: `tag tag-m-${d.motivo}` }, motivoLabel(d.motivo)) : null,
           d.categoria ? h('span', { class: 'tag' }, d.categoria) : null,
           d.atraccion ? h('span', { class: 'tag' }, `Atracción ${d.atraccion.toLowerCase()}`) : null,
-          requiereInfocorp(d.area) ? h('span', { class: 'tag tag-warn', title: 'Anexo 1 PRC-GTC-02' }, 'Requiere Infocorp') : null,
-          (esAsistencial(d) || fuentePrimaria(d.puesto)) ? h('span', { class: 'tag tag-warn', title: 'Anexo 4 PRC-GTC-02' }, 'Validar fuente primaria') : null)),
+          null)),
       h('div', { class: 'case-side' }, slaChip(plazo(caseMeta(caso))),
         st.closed ? h('span', { class: `tag tag-${st.closed}` }, st.note) : h('p', { class: 'next' }, h('span', { class: 'muted' }, 'Siguiente: '), `${st.note} · `, h('strong', {}, st.roles.map((r) => ROLES[r]).join(' / '))))),
     h('div', { class: 'case-body' },
@@ -294,7 +289,7 @@ function formPanel({ schema, form, entity, caso, ctxFn, rerender, extraTop, extr
     const states = (sec) => sectionState(schema, form, sec, u, ctx, caso);
     const onText = () => { saveSoon(); refreshCalcs(host, schema, form.data, ctx); updateMeter(); clearErr(); };
     const onDiscrete = (k) => { saveSoon(); hooks(schema, form, entity, k); const y = window.scrollY; draw(); window.scrollTo(0, y); };
-    const sheet = renderForm({ schema, form, ctx, user: u, states, onText, onDiscrete, showErrors, prefill: resolvePrefill, generators: GENERATORS });
+    const sheet = renderForm({ schema, form, ctx, user: u, states, onText, onDiscrete, showErrors, prefill: resolvePrefill });
     const meter = h('div', { class: 'meter', role: 'status' });
     function editableIds() { return schema.sections.filter((s) => (!s.show || s.show(form.data, ctx)) && states(s).editable).map((s) => s.id); }
     function updateMeter() {
@@ -347,16 +342,7 @@ function docHeader(schema, entity, cand) {
       h('div', {}, h('dt', {}, 'Procedimiento'), h('dd', {}, schema.procedure))));
 }
 
-/* Efectos colaterales de ciertos campos */
-function hooks(schema, form, entity, k) {
-  if (schema.key === 'ING' && k === 'bienvenida_enviada' && entity.fechas) {
-    if (form.data.bienvenida_enviada === 'Sí') entity.fechas.bienvenida = entity.fechas.bienvenida || new Date().toISOString();
-    else delete entity.fechas.bienvenida;
-  }
-  if (schema.key === 'RECL' && k === 'candidatos') {
-    // Si un candidato sale de la terna y aún no tiene firmas, se conserva su ficha (trazabilidad)
-  }
-}
+function hooks() { /* reservado para efectos de campos */ }
 
 /* ───────── Firmas y doble conformidad ───────── */
 function signaturesBlock({ schema, form, entity, caso, ctx, onNeedFields, redraw }) {
@@ -421,37 +407,98 @@ function signaturesBlock({ schema, form, entity, caso, ctx, onNeedFields, redraw
 function fichasList(caso) {
   const u = store.currentUser();
   if (!FORMS.FICHA.visibleTo.includes(u.role)) return h('div', { class: 'panel' }, h('div', { class: 'empty' }, h('p', {}, 'Las fichas de entrevista son confidenciales.')));
-  const terna = (caso.forms.RECL?.data?.candidatos || []).filter((c) => c.terna);
-  const grupo = GRUPOS_OCUP.find((g) => g.v === caso.forms.RQ.data.grupo_ocupacional);
+  caso.candidatos = caso.candidatos || [];
+  const cands = caso.candidatos;
+  const rq = caso.forms.RQ.data;
+  const grupo = GRUPOS_OCUP.find((g) => g.v === rq.grupo_ocupacional);
+  const canEdit = ['analista', 'gtc'].includes(u.role) && !caso.seleccionado && !caso.estadoFinal;
+  const fichaDe = (c) => caso.fichas?.[c.dni];
+  const descartado = (c) => { const f = fichaDe(c); return f && conformidad(FORMS.FICHA, f).completa && calcularFicha(f.data).resultado === 'NO APTO'; };
+  const enTerna = cands.filter((c) => !descartado(c)).length;
+
+  // Alta de candidato de la terna
+  let addForm = null;
+  if (canEdit) {
+    const nom = h('input', { class: 'inp', placeholder: 'Apellidos y nombres', 'aria-label': 'Apellidos y nombres' });
+    const dni = h('input', { class: 'inp', placeholder: 'DNI / CE', 'aria-label': 'DNI o CE', inputmode: 'numeric' });
+    const ori = h('select', { class: 'inp', 'aria-label': 'Origen' }, h('option', { value: 'Externo' }, 'Externo'), h('option', { value: 'Interno' }, 'Interno (colaborador)'));
+    const msg = h('p', { class: 'err' });
+    addForm = h('form', { class: 'addcand', onsubmit: (e) => {
+      e.preventDefault();
+      const n = nom.value.trim(); const d = dni.value.trim();
+      if (n.length < 5) { msg.textContent = 'Escriba apellidos y nombres completos.'; nom.focus(); return; }
+      if (!/^[0-9A-Za-z]{8,12}$/.test(d)) { msg.textContent = 'El DNI o CE debe tener entre 8 y 12 caracteres.'; dni.focus(); return; }
+      if (cands.some((c) => c.dni === d)) { msg.textContent = 'Ese documento ya está registrado en este proceso.'; dni.focus(); return; }
+      if (enTerna >= CONFIG.MAX_TERNA) { msg.textContent = `La terna admite hasta ${CONFIG.MAX_TERNA} candidatos en evaluación (PRC-GTC-02 paso 17).`; return; }
+      cands.push({ nombre: n, dni: d, origen: ori.value });
+      store.log(caso, u, `Agregó a ${n} a la terna.`); store.persist(); route();
+    } },
+      h('div', { class: 'addcand-row' }, nom, dni, ori, h('button', { class: 'btn btn-primary btn-sm', type: 'submit' }, 'Agregar a la terna')), msg);
+  }
+
+  // Cierre del proceso
+  let cierre = null;
+  if (caso.seleccionado) {
+    const sel = caso.seleccionado;
+    const mov = store.getDB().movimientos.find((m) => m.casoId === caso.id);
+    cierre = h('div', { class: 'banner banner-action' },
+      h('span', {}, `Proceso cerrado (${fmtDate(sel.at, true)}). Candidato seleccionado: `, h('strong', {}, sel.nombre), '.'),
+      sel.origen === 'Interno' ? (mov ? h('a', { class: 'btn btn-ghost btn-sm', href: `#/movimiento/${mov.id}` }, `Abrir ${mov.id}`)
+        : ['analista', 'gtc', 'jefe'].includes(u.role) ? h('button', { class: 'btn btn-primary btn-sm', onclick: () => {
+          const m = store.createMov(u, { colaborador: sel.nombre, dni: sel.dni, posiciones: { 'Área': ['', rq.area], 'Puesto': ['', rq.puesto], 'Jefe directo': ['', rq.jefe_nombre], 'Remuneración (S/)': ['', rq.sal_aprobada], 'Jornada / turno': ['', rq.sistema_trabajo] } }, caso.id);
+          store.log(caso, u, `Generó el movimiento interno ${m.id} para ${sel.nombre}.`); store.persist(); go(`#/movimiento/${m.id}`);
+        } }, 'Crear movimiento interno') : null) : null);
+  } else {
+    const listos = fichasAptas(caso);
+    if (listos.length && canEdit) {
+      const pick = h('select', { class: 'inp', 'aria-label': 'Candidato seleccionado' }, listos.map((c) => h('option', { value: c.dni }, `${c.nombre} · ${calcularFicha(fichaDe(c).data).resultado} · ${calcularFicha(fichaDe(c).data).pct} %`)));
+      cierre = h('div', { class: 'banner banner-action' },
+        h('span', {}, 'Hay candidatos aptos con ficha cerrada y recomendación “Contratar”.'),
+        h('div', { class: 'addcand-row' }, pick, h('button', { class: 'btn btn-primary btn-sm', onclick: async () => {
+          const c = listos.find((x) => x.dni === pick.value);
+          if (!(await confirmModal({ title: 'Cerrar el proceso de selección', body: `Se registrará a ${c.nombre} como candidato seleccionado y se detendrá el plazo del Anexo 5. Las fichas quedan archivadas en el expediente.`, ok: 'Cerrar proceso' }))) return;
+          caso.seleccionado = { ...c, at: new Date().toISOString(), by: u.name };
+          caso.fechas.cierre = caso.seleccionado.at;
+          store.log(caso, u, `Cerró el proceso: candidato seleccionado ${c.nombre}.`); store.persist(); toast('Proceso cerrado.'); route();
+        } }, 'Cerrar proceso con este candidato')));
+    } else if (cands.length && cands.every(descartado)) {
+      cierre = h('div', { class: 'obs' }, h('strong', {}, 'Ningún candidato de la terna resultó apto.'), h('p', {}, 'Registre nuevos candidatos para continuar la evaluación.'));
+    }
+  }
+
   return h('div', { class: 'panel' },
     h('h2', {}, 'Entrevista en cadena'),
+    h('p', { class: 'muted' }, 'Cada candidato de la terna tiene su Ficha de evaluación (GTC.PRS.02). GTC completa las secciones 1 a 3, la remite a la jefatura y la jefatura la devuelve firmada en 24 horas.'),
     grupo ? h('div', { class: 'matrix-note' }, h('strong', {}, `Entrevistan (Anexo 2 · ${grupo.l}):`), h('ul', {}, grupo.entrevistan.map((x) => h('li', {}, x)))) : null,
-    h('ul', { class: 'cands' }, terna.map((c) => {
-      const f = caso.fichas?.[c.dni];
+    cierre,
+    h('ul', { class: 'cands' }, cands.map((c) => {
+      const f = fichaDe(c);
       const r = f ? calcularFicha(f.data) : null;
       const conf = f ? conformidad(FORMS.FICHA, f) : null;
-      let estado = 'Sin iniciar';
+      let estado = 'Ficha sin iniciar';
       if (f && f.remitidaAt && !f.signatures?.jefatura) {
         const hrs = hoursSince(f.remitidaAt);
         estado = hrs > CONFIG.HORAS_DEVOLUCION_FICHA ? `Jefatura excede 24 h (${Math.floor(hrs)} h)` : `En jefatura · ${Math.max(0, Math.ceil(CONFIG.HORAS_DEVOLUCION_FICHA - hrs))} h restantes`;
       } else if (f && conf?.completa) estado = 'Ficha cerrada';
       else if (f) estado = 'En evaluación RRHH';
-      return h('li', {}, h('a', { class: 'cand', href: `#/caso/${caso.id}/FICHA/${encodeURIComponent(c.dni)}` },
+      const removable = canEdit && (!f || !Object.keys(f.signatures || {}).length);
+      return h('li', { class: 'cand-li' }, h('a', { class: 'cand', href: `#/caso/${caso.id}/FICHA/${encodeURIComponent(c.dni)}` },
         h('span', { class: 'avatar', 'aria-hidden': 'true' }, c.nombre.split(' ').map((x) => x[0]).slice(0, 2).join('')),
-        h('span', {}, h('strong', {}, c.nombre), h('br'), h('span', { class: 'muted small' }, `${c.origen} · DNI ${c.dni}`)),
+        h('span', {}, h('strong', {}, c.nombre), h('br'), h('span', { class: 'muted small' }, `${c.origen} · ${c.dni}`)),
         h('span', { class: `muted small ${estado.includes('excede') ? 'late' : ''}` }, estado),
-        r ? h('span', { class: `verdict ${{ 'APTO': 'r-apto', 'APTO CON OBSERVACIONES': 'r-obs', 'NO APTO': 'r-no' }[r.resultado] || 'r-cont'}` }, r.completo || r.resultado === 'NO APTO' ? `${r.resultado} · ${r.pct} %` : r.resultado) : h('span', {})));
+        r ? h('span', { class: `verdict ${{ 'APTO': 'r-apto', 'APTO CON OBSERVACIONES': 'r-obs', 'NO APTO': 'r-no' }[r.resultado] || 'r-cont'}` }, r.completo || r.resultado === 'NO APTO' ? `${r.resultado} · ${r.pct} %` : r.resultado) : h('span', {})),
+        removable ? h('button', { class: 'btn-x', title: 'Quitar de la terna', 'aria-label': `Quitar a ${c.nombre}`, onclick: () => {
+          caso.candidatos = cands.filter((x) => x.dni !== c.dni); if (caso.fichas) delete caso.fichas[c.dni];
+          store.log(caso, u, `Quitó a ${c.nombre} de la terna.`); store.persist(); route();
+        } }, '×') : null);
     })),
-    !terna.length ? h('div', { class: 'empty' }, h('p', {}, 'No hay candidatos en terna.')) : null,
-    stageOf(caso).k === 'entrev' && terna.length && terna.every((c) => { const f = caso.fichas?.[c.dni]; return f && conformidad(FORMS.FICHA, f).completa; })
-      ? h('div', { class: 'obs' }, h('strong', {}, 'Ningún candidato resultó apto.'), h('p', {}, 'Reabra la convocatoria para formar una nueva terna.'),
-        u.role === 'analista' ? h('button', { class: 'btn btn-primary btn-sm', onclick: () => { reiniciarSeleccion(caso, u, 'ningún candidato de la terna resultó apto'); go(`#/caso/${caso.id}/RECL`); } }, 'Reabrir convocatoria') : null)
-      : null);
+    !cands.length ? h('div', { class: 'empty' }, h('p', {}, canEdit ? 'Registra a los candidatos preseleccionados (hasta 3) para abrir su ficha de entrevista.' : 'GTC aún no registra la terna.')) : null,
+    addForm);
 }
 
 function fichaPanel(caso, dni) {
   dni = decodeURIComponent(dni);
-  const cand = (caso.forms.RECL?.data?.candidatos || []).find((c) => c.dni === dni);
+  const cand = (caso.candidatos || []).find((c) => c.dni === dni);
   if (!cand) return h('div', { class: 'panel' }, h('p', {}, 'Candidato no encontrado.'));
   const f = ensureFicha(caso, cand);
   const u = store.currentUser();
@@ -476,82 +523,6 @@ function fichaPanel(caso, dni) {
           } }, 'Remitir a jefatura'));
       },
     }));
-}
-
-/* ───────── Generadores de texto ───────── */
-const GENERATORS = {
-  anuncio(d, ctx) {
-    const rq = ctx.rq || {};
-    const perfil = ctx.caso?.forms?.PERFIL?.data || {};
-    const funciones = (perfil.actividades || []).slice(0, 5).map((a) => `• ${a.que}`).join('\n') || '• [Hasta 5 funciones principales, con verbos en infinitivo]';
-    const horario = rq.sistema_trabajo === '150 horas mensuales' ? '150 horas mensuales (turnos rotativos)' : '48 horas semanales';
-    return `${(rq.puesto || 'Puesto').toLowerCase()} – ${(rq.area || 'Área').toLowerCase()}
-
-En Detecta Clínica, institución reconocida por su compromiso con la salud y el bienestar de nuestros pacientes, nos encontramos en la búsqueda de un(a) ${rq.puesto || '(PUESTO REQUERIDO)'} para formar parte de nuestro equipo.
-
-Funciones:
-${funciones}
-
-Requisitos:
-• Estudios: ${rq.profesion || '[carrera / especialidad]'}${rq.especialidad ? ` · ${rq.especialidad}` : ''}
-• Experiencia: ${rq.experiencia_min || '[años]'} (Indispensable)
-• Conocimientos: ${perfil.conocimientos || '[conocimientos requeridos]'}
-
-Horario: ${horario}.
-
-Ofrecemos:
-• Remuneración acorde al mercado.
-• Ingreso a planilla con todos los beneficios de ley.
-• Línea de carrera, si el MOF del área lo determina.
-• Pertenecer a una empresa sólida y en crecimiento.
-
-En Detecta Clínica creemos en la igualdad de oportunidades para todas las personas, sin importar su género, edad, origen étnico, nacionalidad o condición. Promovemos la diversidad y la inclusión, conforme a la Ley N° 29973, modificada por la Ley N° 31707. Si eres una persona con discapacidad y necesitas algún ajuste razonable para participar en el proceso, comunícanoslo.`;
-  },
-  bienvenida(d, ctx) {
-    const rq = ctx.rq || {};
-    const nombre = ctx.candSel?.nombre || '[NOMBRE]';
-    const f = (x) => (x ? new Date(x + 'T12:00:00').toLocaleDateString('es-PE', { day: '2-digit', month: 'long', year: 'numeric' }) : '[FECHA]');
-    const docs = (ctx.expedienteRows || []).map((x) => `• ${x}`).join('\n');
-    return `Asunto: ¡Bienvenido(a) a Detecta Clínica!
-
-Nos complace dar la bienvenida a ${nombre}, quien se incorpora a nuestro equipo como ${rq.puesto || '[PUESTO]'} del área de ${rq.area || '[ÁREA]'}. Su incorporación fortalece nuestro equipo con nuevas capacidades, conocimientos y perspectivas, y contribuye al cumplimiento de nuestros objetivos y a la mejora continua de la organización.
-
-Fecha de ingreso: ${f(d.fecha_ingreso)}.
-Inicio de la inducción corporativa: ${d.induccion || '[FECHA Y LUGAR]'}.
-Documentos requeridos para la contratación:
-${docs}
-Fecha límite de entrega: ${f(d.fecha_limite)}.
-
-Confiamos en que esta nueva etapa estará marcada por el aprendizaje, la colaboración y nuevos logros profesionales. ¡Bienvenido(a) al equipo Detecta Clínica!`;
-  },
-};
-
-/* Ingreso: acciones extra */
-export function ingresoExtras(caso) {
-  return (ctx) => {
-    const u = store.currentUser();
-    const d = caso.forms.ING?.data || {};
-    const out = [];
-    if (d.emo_resultado === 'No apto' && ['analista', 'gtc'].includes(u.role)) {
-      out.push(h('div', { class: 'banner banner-late' }, h('span', {}, 'Examen médico no apto: según PRC-GTC-03 se reinicia la selección.'),
-        h('button', { class: 'btn btn-danger btn-sm', onclick: async () => {
-          if (await confirmModal({ title: 'Reiniciar selección', body: 'El candidato saldrá de la terna, se reabrirá la convocatoria y se borrará el registro de ingreso. El historial conserva lo ocurrido.', ok: 'Reiniciar', danger: true })) {
-            reiniciarSeleccion(caso, u, 'examen médico ocupacional no apto'); go(`#/caso/${caso.id}/RECL`);
-          }
-        } }, 'Reiniciar selección')));
-    }
-    if (ctx.candSel?.origen === 'Interno' && d.bienvenida_enviada === 'Sí') {
-      const mov = store.getDB().movimientos.find((m) => m.casoId === caso.id);
-      out.push(h('div', { class: 'banner' }, h('span', {}, 'Candidato interno: formalice el cambio con el Formato de Movimiento Interno.'),
-        mov ? h('a', { class: 'btn btn-ghost btn-sm', href: `#/movimiento/${mov.id}` }, `Abrir ${mov.id}`)
-          : h('button', { class: 'btn btn-primary btn-sm', onclick: () => {
-            const rq = caso.forms.RQ.data;
-            const m = store.createMov(u, { colaborador: ctx.candSel.nombre, dni: ctx.candSel.dni, tipo: 'Cambio de puesto', posiciones: { 'Área': ['', rq.area], 'Puesto': ['', rq.puesto], 'Jefe directo': ['', rq.jefe_nombre], 'Remuneración (S/)': ['', rq.sal_aprobada], 'Jornada / turno': ['', rq.sistema_trabajo] } }, caso.id);
-            store.log(caso, u, `Generó el movimiento interno ${m.id}.`); store.persist(); go(`#/movimiento/${m.id}`);
-          } }, 'Crear movimiento interno')));
-    }
-    return out.length ? h('div', {}, out) : null;
-  };
 }
 
 /* ════════════════════ Movimientos internos ════════════════════ */
@@ -585,24 +556,20 @@ export function viewGuide() {
   const row = (regla, origen, como) => h('tr', {}, h('td', {}, regla), h('td', { class: 'muted small' }, origen), h('td', {}, como));
   return h('div', { class: 'page page-narrow' },
     h('h1', {}, 'Reglas que la plataforma aplica por ti'),
-    h('p', { class: 'lead' }, 'Cada regla viene de los procedimientos PRC-GTC-01, 02 y 03. Si un procedimiento cambia, se ajusta en js/rules.js o js/schemas.js.'),
+    h('p', { class: 'lead' }, 'La plataforma digitaliza los formatos RQ, GTC.PRS.02, GTC.PRS.03 y GTC.PRS.04. Cada regla viene de los procedimientos PRC-GTC-01, 02 y 03. Si un procedimiento cambia, se ajusta en js/rules.js o js/schemas.js.'),
     h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
       h('thead', {}, h('tr', {}, h('th', {}, 'Regla'), h('th', {}, 'Origen'), h('th', {}, 'Cómo se automatiza'))),
       h('tbody', {},
         row('Ningún formato se firma incompleto', 'Solicitud de la clínica', 'Cada firma exige que todas las secciones que respalda estén completas y sin errores; un medidor indica qué falta y lleva al campo.'),
         row('Ampliación y puesto nuevo requieren Dirección y Gerencia General', 'PRC-GTC-01 §6.1 y pasos a–c', 'Las firmas de Dirección (DA o DM según la categoría) y de GG aparecen solo para esos motivos. “Observado” devuelve el formato a borrador; “Desaprobado” cierra el expediente.'),
-        row('GTC no inicia sin la firma del Jefe de GTC', 'PRC-GTC-01 paso 3', 'La convocatoria se habilita solo con la firma “Aprobado” de GTC, que también fija el inicio del plazo.'),
-        row('Puesto nuevo pasa por levantamiento de perfil y MOF', 'PRC-GTC-01 pasos 6–9', 'Se activa el formato GTC.PRS.04 y una sección para el Área de Procesos antes de la convocatoria.'),
-        row('Plazos de cobertura', 'PRC-GTC-02 Anexo 5', `Semáforo en días útiles: ${TIPOS_PUESTO.map((t) => `${t.l.toLowerCase()} ${t.dias}`).join(', ')}. Se detiene al enviar el comunicado de bienvenida.`),
-        row('Verificación crediticia', 'PRC-GTC-02 Anexo 1', `Obligatoria para: ${AREAS_INFOCORP.join(', ')}. Un resultado no favorable impide integrar la terna.`),
-        row('Fuente primaria para asistenciales', 'PRC-GTC-02 Anexo 4', 'Se detecta por categoría y nombre del puesto; si no está “Validado”, el candidato no entra a la terna.'),
-        row('Terna de hasta 3 candidatos con filtros cumplidos', 'PRC-GTC-02 pasos 11–17', 'Se bloquea la terna si el candidato fue desvinculado, no cumple requisitos, no confirmó interés o tiene verificaciones pendientes.'),
+        row('GTC no inicia sin la firma del Jefe de GTC', 'PRC-GTC-01 paso 3', 'La entrevista en cadena se habilita solo con la firma “Aprobado” de GTC, que también fija el inicio del plazo.'),
+        row('Terna de hasta 3 candidatos', 'PRC-GTC-02 paso 17', 'No se pueden registrar más de 3 candidatos en evaluación; los declarados NO APTO liberan su lugar.'),
+        row('Puesto nuevo pasa por levantamiento de perfil y MOF', 'PRC-GTC-01 pasos 6–9', 'Se activa el formato GTC.PRS.04 y una sección para el Área de Procesos antes de las entrevistas.'),
+        row('Plazos de cobertura', 'PRC-GTC-02 Anexo 5', `Semáforo en días útiles: ${TIPOS_PUESTO.map((t) => `${t.l.toLowerCase()} ${t.dias}`).join(', ')}. Se detiene al cerrar el proceso con el candidato seleccionado.`),
         row('Quién entrevista', 'PRC-GTC-02 Anexo 2', 'El grupo ocupacional que registra GTC define si aplica entrevista final y muestra a los responsables.'),
         row('Devolución de la ficha en 24 horas', 'PRC-GTC-02 paso 23', 'Al remitir la ficha corre un contador visible para la jefatura y GTC.'),
         row('Resultado de la entrevista en cadena', 'GTC.PRS.02 sección 6', 'Cálculo automático del puntaje, ponderación técnica ×2, base 80 o 100 y veredicto. Un requisito crítico incumplido impide APTO y no se puede recomendar “Contratar”.'),
         row('Evidencia en notas extremas', 'GTC.PRS.02 sección 3', 'Las notas 1, 2 y 5 exigen evidencia escrita.'),
-        row('Expediente completo antes del contrato', 'PRC-GTC-03 §6.1 y Anexo 1', 'El visto bueno de GTC se bloquea si falta un documento; la colegiatura se pide solo a profesionales colegiados.'),
-        row('Examen médico no apto reinicia la selección', 'PRC-GTC-03 paso 2', 'Botón de reinicio que saca al candidato de la terna y reabre la convocatoria.'),
         row('Doble conformidad', 'Solicitud de la clínica', 'Cada documento define quién entrega y quién recibe; se cierra solo con ambas firmas y una huella SHA-256 detecta cambios posteriores. Una persona no puede firmar dos casilleros del mismo formato.'),
         row('Datos de salud reservados', 'Ley 29733', 'En suplencias solo se registra el motivo; las fichas de entrevista solo son visibles para GTC y los evaluadores.'),
       ))));
@@ -644,7 +611,7 @@ export function viewPrint(kind, id, formKey, dni) {
   const schema = FORMS[formKey];
   let form; let cand = null; let ctx;
   if (kind === 'mov') { form = entity.form; ctx = buildCtx(null, 'MOV'); }
-  else if (formKey === 'FICHA') { cand = (entity.forms.RECL?.data?.candidatos || []).find((c) => c.dni === decodeURIComponent(dni)); form = entity.fichas?.[cand?.dni]; ctx = buildCtx(entity, 'FICHA', cand); }
+  else if (formKey === 'FICHA') { cand = (entity.candidatos || []).find((c) => c.dni === decodeURIComponent(dni)); form = entity.fichas?.[cand?.dni]; ctx = buildCtx(entity, 'FICHA', cand); }
   else { form = entity.forms[formKey]; ctx = buildCtx(entity, formKey); }
   if (!form) return notFound('El formato aún no tiene datos.');
   const u = store.currentUser();

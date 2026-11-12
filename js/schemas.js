@@ -3,7 +3,7 @@
 // detectadas al contrastar los formatos con los procedimientos PRC-GTC-01/02/03.
 import {
   MOTIVOS, AREAS, TIPOS_PUESTO, GRUPOS_OCUP, requiereAprobacion, esAsistencial, directorDeLinea,
-  calcularFicha, guiaRRHH, CONFIG, EXPEDIENTE, fuentePrimaria, requiereInfocorp, aplicaEntrevistaFinal, addMonthsSafe,
+  calcularFicha, guiaRRHH, CONFIG, aplicaEntrevistaFinal, addMonthsSafe,
 } from './rules.js';
 
 const opt = (...xs) => xs.map((x) => (typeof x === 'string' ? { v: x, l: x } : x));
@@ -198,78 +198,6 @@ export const PERFIL = {
   conformidad: { entrega: 'jefatura', recibe: 'gtc_perfil', textoEntrega: 'La jefatura confirma que el perfil describe la necesidad real del puesto.', textoRecibe: 'GTC confirma que validó el perfil y lo deriva al Área de Procesos.' },
 };
 
-/* ──────────────────────── Reclutamiento (PRC-GTC-02 pasos 10–17) ──────────────────────── */
-export const RECL = {
-  key: 'RECL',
-  code: 'REG-GTC-02',
-  title: 'Convocatoria, filtro y terna',
-  version: 'Registro digital de seguimiento',
-  procedure: 'PRC-GTC-02 pasos 10–19',
-  nuevoFormato: true,
-  sections: [
-    { id: 'r1', title: 'Convocatoria', by: ['analista'], fields: [
-      { k: 'tipo_conv', t: 'radio', label: 'Tipo de convocatoria', req: true, opts: opt('Interna', 'Externa', 'Mixta'), prefill: 'rq.atraccion' },
-      { k: 'medios', t: 'checks', label: 'Medios de difusión', req: true,
-        opts: opt('Correo masivo interno', 'Medios internos', 'Base de datos GTC', 'Bolsas de trabajo', 'Redes sociales', 'Otro') },
-      { k: 'fecha_pub', t: 'date', label: 'Fecha de publicación', req: true, w: 'half' },
-      { k: 'anuncio', t: 'textarea', label: 'Texto del anuncio (estructura Anexo 3)', req: true, rows: 10, generator: 'anuncio',
-        hint: 'Use “Generar borrador” para armar el anuncio con la estructura y la declaración de igualdad de oportunidades obligatoria (Ley 29973 / Ley 26772).' },
-    ] },
-    { id: 'r2', title: 'Candidatos: filtro, contacto y verificaciones', by: ['analista'], fields: [
-      { k: 'candidatos', t: 'table', layout: 'cards', label: 'Candidatos', req: true, minRows: 1, maxRows: 40, rowTitle: (r, i) => r.nombre || `Candidato ${i + 1}`,
-        cols: [
-          { k: 'nombre', t: 'text', label: 'Apellidos y nombres', req: true },
-          { k: 'dni', t: 'text', label: 'DNI / CE', req: true, pattern: '^[0-9A-Za-z]{8,12}$', patternMsg: 'Entre 8 y 12 caracteres alfanuméricos.' },
-          { k: 'origen', t: 'select', label: 'Origen', req: true, opts: opt('Externo', 'Interno') },
-          { k: 'telefono', t: 'text', label: 'Teléfono', req: true },
-          { k: 'desvinculado', t: 'select', label: '¿Desvinculado de empresa vinculada a Detecta?', req: true, opts: opt('No', 'Sí') },
-          { k: 'reingreso', t: 'select', label: 'Reingreso (excolaborador)', req: true, opts: opt('No', 'Sí, más de 1 año del cese', 'Sí, menos de 1 año (requiere autorización)') },
-          { k: 'requisitos', t: 'select', label: 'Formación, experiencia y pretensión', req: true, opts: opt('Cumple', 'No cumple') },
-          { k: 'pretension', t: 'money', label: 'Pretensión salarial' },
-          { k: 'contacto', t: 'select', label: 'Llamada de contacto', req: true, opts: opt('Pendiente', 'Interesado', 'No interesado', 'No contesta') },
-          { k: 'cv_cert', t: 'select', label: 'CV certificado y Certiadulto/Certijoven', req: true, opts: opt('Pendiente', 'Recibido') },
-          { k: 'ent_inicial', t: 'select', label: 'Entrevista inicial GTC', req: true, opts: opt('Pendiente', 'Apto', 'No apto') },
-          { k: 'referencias', t: 'select', label: 'Referencias laborales', req: true, opts: opt('Pendiente', 'Conforme', 'No conforme') },
-          { k: 'infocorp', t: 'select', label: 'Infocorp (con autorización expresa)', req: true, opts: opt('No aplica', 'Pendiente', 'Favorable', 'No favorable') },
-          { k: 'fuente_primaria', t: 'select', label: 'Fuente primaria / habilitación', req: true, opts: opt('No aplica', 'Pendiente', 'Validado', 'No validado') },
-          { k: 'obs', t: 'text', label: 'Observación' },
-          { k: 'terna', t: 'toggle', label: 'Integra la terna' },
-        ] },
-    ] },
-  ],
-  validate(d, ctx) {
-    const e = [];
-    const rq = ctx?.rq || {};
-    const terna = (d.candidatos || []).filter((c) => c.terna);
-    const infocorp = requiereInfocorp(rq.area);
-    const fp = esAsistencial(rq) || !!fuentePrimaria(rq.puesto);
-    (d.candidatos || []).forEach((c, i) => {
-      const at = `candidatos.${i}`;
-      if (infocorp && c.infocorp === 'No aplica') e.push({ k: `${at}.infocorp`, m: `El área ${rq.area} exige verificación crediticia (Anexo 1).` });
-      if (fp && c.fuente_primaria === 'No aplica') e.push({ k: `${at}.fuente_primaria`, m: 'Puesto asistencial: valide la formación en fuente primaria (Anexo 4).' });
-      if (!c.terna) return;
-      const motivos = [];
-      if (c.desvinculado === 'Sí') motivos.push('fue desvinculado');
-      if (c.requisitos !== 'Cumple') motivos.push('no cumple requisitos mínimos');
-      if (c.contacto !== 'Interesado') motivos.push('no confirmó interés');
-      if (c.ent_inicial !== 'Apto') motivos.push('entrevista inicial no apta o pendiente');
-      if (c.referencias !== 'Conforme') motivos.push('referencias no conformes o pendientes');
-      if (c.cv_cert !== 'Recibido') motivos.push('falta CV certificado / Certiadulto');
-      if (['Pendiente', 'No favorable'].includes(c.infocorp)) motivos.push('Infocorp pendiente o no favorable');
-      if (['Pendiente', 'No validado'].includes(c.fuente_primaria)) motivos.push('fuente primaria pendiente o no validada');
-      if (motivos.length) e.push({ k: `${at}.terna`, m: `No puede integrar la terna: ${motivos.join(', ')}.` });
-    });
-    if (terna.length > CONFIG.MAX_TERNA) e.push({ k: 'candidatos', m: `La terna admite como máximo ${CONFIG.MAX_TERNA} candidatos.` });
-    if (!terna.length) e.push({ k: 'candidatos', m: 'Marque al menos un candidato para la terna.', soft: true });
-    return e;
-  },
-  signatures: [
-    { key: 'analista', label: 'Analista de Selección · entrega la terna', roles: ['analista'], requires: ['r1', 'r2'], blockIfSoft: ['candidatos'] },
-    { key: 'jefe', label: 'Jefe inmediato · recibe la terna', roles: ['jefe'], requires: ['r1', 'r2'], after: ['analista'] },
-  ],
-  conformidad: { entrega: 'analista', recibe: 'jefe', textoEntrega: 'GTC entrega la terna con CV, verificaciones y ficha de entrevista inicial.', textoRecibe: 'La jefatura recibe la terna y se compromete a entrevistar y devolver la documentación en 24 horas.' },
-};
-
 /* ──────────────── GTC.PRS.02 · Ficha de evaluación – entrevista en cadena ──────────────── */
 const score = (k, label) => ({ k, t: 'score', label, req: true });
 const REQUISITOS = ['Formación / título requerido', 'Colegiatura y habilitación (si aplica)', 'Experiencia específica mínima', 'Conocimiento / certificación indispensable', 'Disponibilidad para horario / turnos requeridos', 'Otro requisito crítico del perfil'];
@@ -359,70 +287,6 @@ export const FICHA = {
   conformidad: { entrega: 'jefatura', recibe: 'rrhh', textoEntrega: 'La jefatura devuelve la ficha con su evaluación técnica (plazo: 24 horas).', textoRecibe: 'GTC recibe la ficha completa y consolida el resultado.', fallbackEntrega: (d) => d.continua === 'No' },
 };
 
-/* ───────────────────────── Ingreso (PRC-GTC-03) ───────────────────────── */
-export const ING = {
-  key: 'ING',
-  code: 'REG-GTC-03',
-  title: 'Contratación e ingreso de personal',
-  version: 'Lista de verificación del expediente',
-  procedure: 'PRC-GTC-03',
-  nuevoFormato: true,
-  sections: [
-    { id: 'i1', title: 'Aprobación final del candidato', by: ['analista'], fields: [
-      { k: 'seleccionado', t: 'select', label: 'Candidato seleccionado', req: true, opts: 'ctx:aptos', hint: 'Solo aparecen candidatos con ficha APTO o APTO CON OBSERVACIONES y doble conformidad completa.' },
-      { k: 'aprobado_por', t: 'text', label: 'Aprobado por (según Anexo 2)', req: true, w: 'half' },
-      { k: 'fecha_aprobacion', t: 'date', label: 'Fecha de aprobación', req: true, w: 'half' },
-    ] },
-    { id: 'i2', title: 'Examen médico ocupacional y verificación personal', by: ['analista'], fields: [
-      { k: 'emo_fecha', t: 'date', label: 'Fecha del examen médico', req: true, w: 'half' },
-      { k: 'emo_resultado', t: 'radio', label: 'Resultado', req: true, opts: opt('Pendiente', 'Apto', 'No apto'), w: 'half' },
-      { k: 'ant_empresa', t: 'text', label: 'Empresa verificadora de antecedentes', req: true, w: 'half', show: (d) => d.emo_resultado === 'Apto' },
-      { k: 'ant_resultado', t: 'radio', label: 'Antecedentes policiales, penales y judiciales', req: true, opts: opt('Pendiente', 'Conforme', 'Observado'), w: 'half', show: (d) => d.emo_resultado === 'Apto',
-        hint: 'El costo de la verificación lo asume el nuevo colaborador (PRC-GTC-03 paso 3).' },
-    ] },
-    { id: 'i3', title: 'Comunicado de bienvenida', by: ['analista'], show: (d) => d.emo_resultado === 'Apto' && d.ant_resultado === 'Conforme', fields: [
-      { k: 'correo', t: 'text', label: 'Correo del candidato', req: true, w: 'half', pattern: '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$', patternMsg: 'Correo no válido.' },
-      { k: 'fecha_ingreso', t: 'date', label: 'Fecha de ingreso', req: true, w: 'half' },
-      { k: 'induccion', t: 'text', label: 'Inicio de la inducción corporativa (fecha y lugar)', req: true },
-      { k: 'fecha_limite', t: 'date', label: 'Fecha límite de entrega de documentos', req: true, w: 'half' },
-      { k: 'bienvenida', t: 'textarea', label: 'Comunicado (Anexo 2)', req: true, rows: 9, generator: 'bienvenida' },
-      { k: 'bienvenida_enviada', t: 'radio', label: '¿Comunicado enviado?', req: true, opts: SINO, w: 'half', hint: 'Al marcar “Sí” se detiene el contador de plazo del Anexo 5.' },
-    ] },
-    { id: 'i4', title: 'Expediente de ingreso (Anexo 1)', by: ['analista'], show: (d) => d.bienvenida_enviada === 'Sí', fields: [
-      { k: 'expediente', t: 'matrix', label: 'Documentos del file de personal', req: true, rows: 'ctx:expediente', opts: opt('Recibido', 'Pendiente', 'No aplica') },
-      { k: 'movimiento_info', t: 'info', show: (d, ctx) => ctx?.candSel?.origen === 'Interno',
-        text: 'El candidato es colaborador interno: el cambio de puesto se formaliza con el Formato de Movimiento Interno (GTC.PRS.03). Créelo desde la pestaña “Movimientos”.' },
-    ] },
-    { id: 'i5', title: 'Contrato de trabajo', by: ['analista'], unlockAfter: (ctx, form) => !!form.signatures?.vb_gtc, fields: [
-      { k: 'contrato_modalidad', t: 'text', label: 'Modalidad contractual', req: true, w: 'half', prefill: 'rq.tipo_contrato' },
-      { k: 'representante', t: 'text', label: 'Representante legal que suscribe', req: true, w: 'half' },
-      { k: 'contrato_fecha', t: 'date', label: 'Fecha de firma (antes del inicio de labores)', req: true, w: 'half' },
-      { k: 'contrato_firmado', t: 'radio', label: 'Contrato firmado por ambas partes', req: true, opts: SINO, w: 'half' },
-      { k: 'tregistro', t: 'radio', label: 'Alta en T-Registro / afiliaciones coordinadas con planillas', req: true, opts: SINO },
-    ] },
-  ],
-  validate(d, ctx) {
-    const e = [];
-    if (d.emo_resultado === 'No apto') e.push({ k: 'emo_resultado', m: 'Examen no apto: se reinicia el proceso de selección (PRC-GTC-03 paso 2).', soft: true });
-    if (d.ant_resultado === 'Observado') e.push({ k: 'ant_resultado', m: 'Antecedentes observados: comuníquelo a la Jefatura de GTC antes de continuar.', soft: true });
-    const exp = d.expediente || {};
-    (ctx?.expedienteRows || []).forEach((row) => {
-      const meta = EXPEDIENTE.find((x) => x.l === row);
-      if (exp[row] === 'Pendiente') e.push({ k: 'expediente', m: `Falta: ${row}. No se emite el contrato con el expediente incompleto.`, soft: true });
-      if (exp[row] === 'No aplica' && meta && !meta.opcional) e.push({ k: 'expediente', m: `“${row}” es obligatorio para todos los ingresos.` });
-    });
-    if (d.contrato_fecha && d.fecha_ingreso && d.contrato_fecha > d.fecha_ingreso) e.push({ k: 'contrato_fecha', m: 'El contrato debe firmarse antes del inicio de labores.' });
-    if (d.contrato_firmado === 'No') e.push({ k: 'contrato_firmado', m: 'El colaborador no inicia labores sin contrato firmado.', soft: true });
-    return e;
-  },
-  signatures: [
-    { key: 'colaborador', label: 'Nuevo colaborador · entrega documentación y declaraciones', roles: ['analista', 'colaborador'], requires: ['i1', 'i2', 'i3', 'i4'], blockIfSoft: ['expediente', 'emo_resultado', 'ant_resultado'], tablet: true },
-    { key: 'vb_gtc', label: 'Jefatura de GTC · visto bueno al expediente', roles: ['gtc'], requires: ['i1', 'i2', 'i3', 'i4'], after: ['colaborador'], blockIfSoft: ['expediente'] },
-    { key: 'cierre', label: 'Analista de Selección · cierre del file', roles: ['analista'], requires: ['i5'], after: ['vb_gtc'], blockIfSoft: ['contrato_firmado'] },
-  ],
-  conformidad: { entrega: 'colaborador', recibe: 'vb_gtc', textoEntrega: 'El nuevo colaborador declara que la documentación y las declaraciones juradas son veraces.', textoRecibe: 'GTC da visto bueno al expediente completo y autoriza la emisión del contrato.' },
-};
-
 /* ──────────────── GTC.PRS.03 · Movimiento interno de personal ──────────────── */
 const conAdecuacion = (d) => d.adecuacion && d.adecuacion !== 'No aplica';
 export const MOV = {
@@ -498,5 +362,5 @@ export const MOV = {
   conformidad: { entrega: 'colaborador', recibe: 'gtc', textoEntrega: 'El colaborador declara haber recibido información sobre la nueva posición, funciones, jefatura, remuneración, jornada, fecha efectiva y condiciones de adecuación.', textoRecibe: 'GTC confirma que el movimiento cuenta con las aprobaciones y lo ejecuta.' },
 };
 
-export const FORMS = { RQ, PERFIL, RECL, FICHA, ING, MOV };
-export { calcularFicha, aplicaEntrevistaFinal, EXPEDIENTE, fuentePrimaria };
+export const FORMS = { RQ, PERFIL, FICHA, MOV };
+export { calcularFicha, aplicaEntrevistaFinal };

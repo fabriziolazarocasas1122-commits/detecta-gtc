@@ -2,7 +2,7 @@
 import { FORMS } from './schemas.js';
 import { validateForm, sectionFieldKeys } from './engine.js';
 import {
-  ROLES, requiereAprobacion, directorDeLinea, aplicaEntrevistaFinal, calcularFicha, EXPEDIENTE, fuentePrimaria, esAsistencial,
+  ROLES, requiereAprobacion, directorDeLinea, aplicaEntrevistaFinal, calcularFicha, esAsistencial,
 } from './rules.js';
 import { hashOf, nowISO, todayISO } from './util.js';
 import * as store from './store.js';
@@ -17,18 +17,7 @@ export function buildCtx(caso, formKey, cand = null) {
     const s = caso.forms.RQ.signatures || {};
     const sigsRQ = activeSignatures(FORMS.RQ, rq);
     ctx.readyForGTC = sigsRQ.filter((x) => x.key !== 'gtc').every((x) => s[x.key] && s[x.key].decision !== 'Observado');
-    // Candidatos aptos con ficha cerrada
-    const recl = caso.forms.RECL?.data?.candidatos || [];
-    ctx.aptos = recl.filter((c) => c.terna).filter((c) => {
-      const f = caso.fichas?.[c.dni];
-      if (!f) return false;
-      const r = calcularFicha(f.data).resultado;
-      return (r === 'APTO' || r === 'APTO CON OBSERVACIONES') && conformidad(FORMS.FICHA, f).completa;
-    }).map((c) => ({ v: c.dni, l: `${c.nombre} · ${c.dni} · ${calcularFicha(caso.fichas[c.dni].data).resultado}` }));
-    const sel = caso.forms.ING?.data?.seleccionado;
-    ctx.candSel = recl.find((c) => c.dni === sel) || null;
-    const colegiado = !!fuentePrimaria(rq.puesto)?.colegiado;
-    ctx.expedienteRows = EXPEDIENTE.filter((e) => !e.soloColegiado || colegiado).map((e) => e.l);
+    ctx.candidatos = caso.candidatos || [];
   }
   return ctx;
 }
@@ -160,9 +149,7 @@ export const STAGES = [
   { k: 'aprob', l: 'Aprobación de la vacante', form: 'RQ', proc: 'PRC-GTC-01 · a–d', optional: true },
   { k: 'gtc', l: 'Validación GTC', form: 'RQ', proc: 'PRC-GTC-01 · 3–5' },
   { k: 'perfil', l: 'Perfil del puesto nuevo', form: 'PERFIL', proc: 'PRC-GTC-01 · 6–9', optional: true },
-  { k: 'recl', l: 'Convocatoria y terna', form: 'RECL', proc: 'PRC-GTC-02 · 10–19' },
-  { k: 'entrev', l: 'Entrevista en cadena', form: 'FICHA', proc: 'PRC-GTC-02 · 20–23' },
-  { k: 'ing', l: 'Ingreso y contrato', form: 'ING', proc: 'PRC-GTC-03' },
+  { k: 'entrev', l: 'Entrevista en cadena', form: 'FICHA', proc: 'PRC-GTC-02 · 14–23' },
 ];
 
 export function ensureForm(caso, key) {
@@ -205,30 +192,28 @@ export function stageOf(caso) {
       return out('perfil', p ? sigRoles(nx, p.data) : ['analista', 'jefe'], p ? `Firma pendiente: ${sigLabel(nx, p.data)}` : 'Convocar a la jefatura al levantamiento del perfil');
     }
   }
-  const rc = caso.forms.RECL;
-  if (!rc || !conformidad(FORMS.RECL, rc).completa) {
-    const nx = rc ? nextSigner(FORMS.RECL, rc) : null;
-    return out('recl', nx ? sigRoles(nx, rc.data) : ['analista'], nx ? `Firma pendiente: ${sigLabel(nx, rc.data)}` : 'Publicar convocatoria y registrar candidatos');
-  }
-  const ing = caso.forms.ING;
-  const ctx = buildCtx(caso, 'ING');
-  if (!ctx.aptos.length) {
-    const roles = [];
-    const notes = [];
-    (rc.data.candidatos || []).filter((c) => c.terna).forEach((c) => {
-      const f = caso.fichas?.[c.dni];
-      if (!f) { roles.push('analista'); return; }
-      if (f.data.continua === 'Sí' && !f.remitidaAt) { roles.push('analista'); return; }
-      const nx = nextSigner(FORMS.FICHA, f);
-      if (nx) { roles.push(...sigRoles(nx, f.data)); notes.push(c.nombre.split(' ')[0]); }
-    });
-    return out('entrev', roles.length ? roles : ['analista'], roles.length ? 'Evaluar a la terna' : 'Ningún candidato apto: reabrir convocatoria');
-  }
-  if (!ing || !ing.signatures?.cierre) {
-    const nx = ing ? nextSigner(FORMS.ING, ing) : null;
-    return out('ing', nx ? sigRoles(nx, ing.data) : ['analista'], nx ? `Firma pendiente: ${sigLabel(nx, ing.data)}` : 'Registrar la aprobación final del candidato');
-  }
-  return { ...out('fin', [], 'Ingreso formalizado'), closed: 'completado' };
+  if (caso.seleccionado) return { ...out('fin', [], `Seleccionado: ${caso.seleccionado.nombre}`), closed: 'completado' };
+  const cands = caso.candidatos || [];
+  if (!cands.length) return out('entrev', ['analista'], 'Registrar la terna y aplicar la entrevista en cadena');
+  if (fichasAptas(caso).length) return out('entrev', ['analista'], 'Cerrar el proceso con el candidato seleccionado');
+  const roles = [];
+  cands.forEach((c) => {
+    const f = caso.fichas?.[c.dni];
+    if (!f || (f.data.continua === 'Sí' && !f.remitidaAt)) { roles.push('analista'); return; }
+    const nx = nextSigner(FORMS.FICHA, f);
+    if (nx) roles.push(...sigRoles(nx, f.data));
+  });
+  return out('entrev', roles.length ? roles : ['analista'], roles.length ? 'Evaluar a la terna' : 'Ningún candidato apto: registrar nuevos candidatos');
+}
+
+// Candidatos con ficha cerrada (doble conformidad), resultado apto y recomendación "Contratar"
+export function fichasAptas(caso) {
+  return (caso.candidatos || []).filter((c) => {
+    const f = caso.fichas?.[c.dni];
+    if (!f) return false;
+    const r = calcularFicha(f.data).resultado;
+    return (r === 'APTO' || r === 'APTO CON OBSERVACIONES') && f.data.recomendacion === 'Contratar' && conformidad(FORMS.FICHA, f).completa;
+  });
 }
 
 export function stageApplies(caso) {
@@ -241,7 +226,7 @@ export function pendingFor(user, list = store.getDB().cases) {
     const st = stageOf(c);
     if (st.closed) return false;
     if (!st.roles.includes(user.role)) return false;
-    if (user.role === 'jefe') return c.createdBy === user.id || st.k === 'entrev' || st.k === 'recl';
+    if (user.role === 'jefe') return c.createdBy === user.id || st.k === 'entrev';
     if (user.role === 'analista' && c.forms.RQ.data.analista_id && st.k !== 'rq') return c.forms.RQ.data.analista_id === user.id;
     return true;
   });
@@ -260,18 +245,6 @@ export function movStage(m) {
   return { done: false, label: `Pendiente: ${sigLabel(nx, m.form.data)}`, roles: sigRoles(nx, m.form.data) };
 }
 
-/* Reinicio del proceso (examen médico no apto o ningún apto) */
-export function reiniciarSeleccion(caso, user, motivo) {
-  if (caso.forms.RECL) {
-    caso.forms.RECL.signatures = {};
-    const sel = caso.forms.ING?.data?.seleccionado;
-    (caso.forms.RECL.data.candidatos || []).forEach((c) => { if (c.dni === sel) { c.terna = false; c.obs = `Descartado: ${motivo}`; } });
-  }
-  delete caso.forms.ING;
-  store.log(caso, user, `Reinició la selección: ${motivo}.`);
-  store.persist();
-}
-
 /* Al cargar datos de demostración, sella sus firmas con el hash real */
 export async function sealDemo() {
   const db = store.getDB();
@@ -279,6 +252,7 @@ export async function sealDemo() {
   for (const c of db.cases) {
     for (const [k, f] of Object.entries(c.forms)) {
       const schema = FORMS[k];
+      if (!schema) continue;
       for (const s of schema.signatures) {
         const sg = f.signatures?.[s.key];
         if (sg && sg.hash === 'demo') { sg.hash = await hashOf(signedPayload(schema, f.data, s, { caso: c })); changed = true; }

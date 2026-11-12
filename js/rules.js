@@ -82,7 +82,7 @@ export function plazo(caso) {
   const tipo = TIPOS_PUESTO.find((t) => t.v === caso.tipoPuesto) || TIPOS_PUESTO[0];
   const inicio = caso.fechas?.validacionGTC;
   if (!inicio) return { tipo, usados: 0, total: tipo.dias, estado: 'pendiente' };
-  const fin = caso.fechas?.bienvenida || undefined;
+  const fin = caso.fechas?.cierre || undefined;
   const usados = businessDaysBetween(inicio, fin);
   const ratio = usados / tipo.dias;
   return { tipo, usados, total: tipo.dias, estado: fin ? 'cerrado' : ratio > 1 ? 'vencido' : ratio > 0.75 ? 'riesgo' : 'en_plazo' };
@@ -130,19 +130,5 @@ export function guiaRRHH(p) {
   if (p >= 18) return 'Cumple con observaciones';
   return 'Evidencia insuficiente';
 }
-
-// PRC-GTC-03 Anexo 1: expediente de ingreso
-export const EXPEDIENTE = [
-  { k: 'dni', l: 'Documento Nacional de Identidad (copia)' },
-  { k: 'cv', l: 'CV documentado o CV certificado' },
-  { k: 'estudios', l: 'Certificado de estudios, grado o título (copia)' },
-  { k: 'colegiatura', l: 'Constancia de colegiatura y habilitación vigente; especialidad registrada, si corresponde', soloColegiado: true },
-  { k: 'aptitud', l: 'Certificado de aptitud médica ocupacional' },
-  { k: 'antecedentes', l: 'Informe de antecedentes policiales, penales y judiciales' },
-  { k: 'derechohabientes', l: 'Documentos de derechohabientes para EsSalud', opcional: true },
-  { k: 'pensiones', l: 'Constancia de afiliación al sistema de pensiones (ONP o AFP)' },
-  { k: 'banco', l: 'Datos de cuenta bancaria para el pago de remuneraciones' },
-  { k: 'foto', l: 'Fotografía tamaño carné' },
-];
 
 export { addMonths as addMonthsSafe } from './util.js';

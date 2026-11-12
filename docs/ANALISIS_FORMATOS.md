@@ -1,6 +1,6 @@
 # Análisis campo por campo de los formatos de GTC
 
-Contraste de los cuatro formatos físicos con los procedimientos **PRC-GTC-01**, **PRC-GTC-02** y **PRC-GTC-03** (V.01 · 01/09/2026), y de cómo quedó cada campo en la plataforma.
+Contraste de los cuatro formatos físicos (los únicos que digitaliza la plataforma) con los procedimientos **PRC-GTC-01**, **PRC-GTC-02** y **PRC-GTC-03** (V.01 · 01/09/2026), y de cómo quedó cada campo en la plataforma.
 
 Leyenda: **Obl.** = obligatorio en la plataforma · **Cond.** = obligatorio solo si se cumple la condición indicada · **Auto** = calculado por el sistema.
 

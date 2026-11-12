@@ -469,3 +469,8 @@ select.inp { cursor: pointer; appearance: none; background-image: url("data:imag
 }
 main:focus, main:focus-visible { outline: none; }
 .print-doc .tag-new, .print-doc .hint, .print-doc .gen, .print-doc .info { display: none; }
+.addcand { margin-top: 18px; padding: 16px; border: 1.5px dashed #B6D0DC; border-radius: var(--r-m); display: grid; gap: 6px; }
+.addcand-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.addcand-row .inp { flex: 1 1 160px; width: auto; }
+.cand-li { display: flex; align-items: center; gap: 6px; }
+.cand-li .cand { flex: 1; }

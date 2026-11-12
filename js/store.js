@@ -3,7 +3,7 @@
 // el resto de la aplicación solo usa las funciones exportadas aquí.
 import { uid, nowISO, clone } from './util.js';
 
-const KEY = 'detecta-gtc:v1';
+const KEY = 'detecta-gtc:v2';
 let db = null;
 const listeners = new Set();
 
@@ -55,7 +55,7 @@ export function createCase(user) {
   const c = {
     id: nextCode('RQ'), createdAt: nowISO(), createdBy: user.id,
     forms: { RQ: { data: {}, signatures: {}, observaciones: [] } },
-    fichas: {}, fechas: {}, estadoFinal: null, timeline: [],
+    fichas: {}, candidatos: [], fechas: {}, estadoFinal: null, timeline: [],
   };
   db.cases.unshift(c);
   log(c, user, 'Creó el requerimiento de personal.');
