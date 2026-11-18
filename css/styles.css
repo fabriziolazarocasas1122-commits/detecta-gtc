@@ -559,7 +559,7 @@ main:focus, main:focus-visible { outline: none; }
 .login { min-height: 100vh; display: grid; grid-template-columns: 1.05fr 1fr; }
 .login-art { background: radial-gradient(120% 90% at 20% 10%, #1d6f97 0%, var(--ink) 55%, #0a3a53 100%); color: #E7F6FC; display: grid; place-items: center; padding: 48px; position: relative; overflow: hidden; }
 .login-art::before, .login-art::after { content: ''; position: absolute; border-radius: 999px; width: 520px; height: 70px; transform: rotate(-32deg); opacity: .9; }
-.login-art::before { background: var(--cyan); left: -240px; bottom: 10px; }
+.login-art::before { background: var(--cyan); left: -300px; bottom: -30px; }
 .login-art::after { background: var(--lime); right: -200px; top: 90px; transform: rotate(32deg); }
 .login-art-in { position: relative; z-index: 1; max-width: 420px; display: grid; justify-items: start; gap: 14px; }
 .detecto-wrap.login-bot { width: 230px; margin-bottom: 6px; }

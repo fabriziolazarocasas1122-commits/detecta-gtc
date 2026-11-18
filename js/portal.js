@@ -109,7 +109,7 @@ export function viewLogin() {
     err.textContent = ''; btn.disabled = true; btn.textContent = 'Verificando…';
     const u = await store.login(user.value, pass.value);
     btn.disabled = false; btn.textContent = 'Ingresar';
-    if (!u) { err.textContent = 'Usuario o contraseña incorrectos. Revisa los datos e inténtalo otra vez.'; pass.select(); return; }
+    if (!u) { err.textContent = 'Usuario o contraseña incorrectos. Revisa que el usuario esté bien escrito y vuelve a intentarlo.'; pass.select(); return; }
     location.hash = '#/'; route();
   } },
     h('label', { class: 'lbl', for: 'lg-user' }, 'Usuario'), user,

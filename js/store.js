@@ -3,7 +3,7 @@
 // el resto de la aplicación solo usa las funciones exportadas aquí.
 import { uid, nowISO, clone, hashOf } from './util.js';
 
-const KEY = 'detecta-gtc:v3';
+const KEY = 'detecta-gtc:v4';
 const SESSION = 'detecta-gtc:sesion';
 export const DEMO_PASSWORD = 'Detecta2026';
 let db = null;
@@ -16,7 +16,7 @@ const SEED_USERS = [
   { id: 'u_dm', username: 'dmedica', passHash: '4f67d3b4c44d3ccf9e17e4769c1bb503715ab9b0709019d09330e039b005ede1', name: 'Luis Salazar Peña', role: 'dm', cargo: 'Director Médico', area: 'Dirección Médica' },
   { id: 'u_gg', username: 'ggeneral', passHash: '5e1a277358e30ad4790aa5f6634d582f9fbdbfef6298a2017c411df7bc97537b', name: 'Jorge Ramírez Castro', role: 'gg', cargo: 'Gerente General', area: 'Gerencia General' },
   { id: 'u_gtc', username: 'jefegtc', passHash: '5479f205c83dc95ffb60f350bbb729d75dc38bfbd7f55e86688901c3e19009e5', name: 'Andrea Vílchez Soto', role: 'gtc', cargo: 'Jefe de Gestión del Talento y Cultura', area: 'Gestión del Talento y Cultura' },
-  { id: 'u_an', username: 'ltorres', passHash: 'fbbd42d1c93fe279b3643a6e6fa8d918d2791546ab49e228f36312a7207965dd', name: 'Lucía Torres Ramos', role: 'analista', cargo: 'Analista de Selección', area: 'Gestión del Talento y Cultura' },
+  { id: 'u_an', username: 'analista', passHash: '3fd0a8c21b4adef7a92890453f529121ec3a68883f0e28f5140dce0ff4916f81', name: 'Lucía Torres Ramos', role: 'analista', cargo: 'Analista de Selección', area: 'Gestión del Talento y Cultura' },
   { id: 'u_proc', username: 'procesos', passHash: 'e404bc7a28be7a589adee7665535d1a179f2427cff739c07a782f82d0f8f5d8e', name: 'Diego Huamán Cruz', role: 'procesos', cargo: 'Analista de Procesos', area: 'Procesos' },
   { id: 'u_col', username: 'colaborador', passHash: '80f96f27d0e1688bc57026fb8f70eb4d25ad0984947c46da9b3b803b211d4ba6', name: 'Pedro Lima Vargas', role: 'colaborador', cargo: 'Colaborador', area: '—' },
 ];

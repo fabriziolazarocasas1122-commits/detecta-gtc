@@ -31,7 +31,7 @@ Cada persona entra con su **usuario y contraseña** y ve solo su propia ventana:
 | Área de Procesos | Procesos | Valida funciones y actualiza MOF y organigrama de puestos nuevos |
 | Colaborador | Colaborador | Firma sus movimientos internos |
 
-Usuarios de demostración (contraseña `Detecta2026`): `rmedina` y `cparedes` (solicitantes), `jefegtc`, `ltorres` (analista), `dadministrativa`, `dmedica`, `ggeneral`, `procesos`, `colaborador`. La Jefatura de GTC crea y administra usuarios en **Usuarios y datos**; las cuentas nuevas reciben la contraseña inicial y deben cambiarla al ingresar.
+Usuarios de demostración (contraseña `Detecta2026`): `rmedina` y `cparedes` (solicitantes), `jefegtc`, `analista`, `dadministrativa`, `dmedica`, `ggeneral`, `procesos`, `colaborador`. La Jefatura de GTC crea y administra usuarios en **Usuarios y datos**; las cuentas nuevas reciben la contraseña inicial y deben cambiarla al ingresar.
 
 ## Qué hace
 
@@ -77,7 +77,7 @@ python3 -m http.server 8080
 
 Ingresa con cualquiera de los usuarios de demostración y usa **Cerrar sesión** para cambiar de rol. Vienen dos expedientes de ejemplo:
 
-1. **RQ-xxxx-0002 · Enfermera de hospitalización (reemplazo).** Entra como `rmedina`, completa los datos que faltan y firma. Luego, como `jefegtc`, registra la remuneración, asigna la analista y firma. Sigue como `ltorres`: registra la terna, llena la ficha y remítela. Vuelve como `rmedina` a **Entrevistas por evaluar**, completa la entrevista técnica y firma. Termina como `ltorres`: firma la ficha y cierra el proceso.
+1. **RQ-xxxx-0002 · Enfermera de hospitalización (reemplazo).** Entra como `rmedina`, completa los datos que faltan y firma. Luego, como `jefegtc`, registra la remuneración, asigna la analista y firma. Sigue como `analista`: registra la terna, llena la ficha y remítela. Vuelve como `rmedina` a **Entrevistas por evaluar**, completa la entrevista técnica y firma. Termina como `analista`: firma la ficha y cierra el proceso.
 2. **RQ-xxxx-0001 · Asistente de almacén (ampliación).** Ya tiene la aprobación de Dirección Administrativa; entra como `ggeneral` para aprobarla u observarla.
 
 En **Usuarios y datos** puedes renombrar usuarios, exportar o importar un respaldo y restablecer la demostración.
