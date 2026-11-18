@@ -14,80 +14,15 @@ import {
 import { openSignModal, confirmModal } from './signature.js';
 import { detecto, detectoSays, celebrate } from './detecto.js';
 
-const go = (hash) => { location.hash = hash; };
+export const go = (hash) => { location.hash = hash; };
 let saveTimer = null;
+import { route, canOpenCase, canOpenMov, caseTabsFor, listHref } from './portal.js';
 const saveSoon = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { store.persist(); flashSaved(); }, 350); };
 function flashSaved() { const el = document.getElementById('savestate'); if (el) { el.textContent = `Guardado ${new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}`; el.classList.add('pulse'); setTimeout(() => el.classList.remove('pulse'), 600); } }
 
-/* ════════════════════ Layout ════════════════════ */
-export function shell(content, active) {
-  const u = store.currentUser();
-  const db = store.getDB();
-  const myCount = pendingFor(u).length + pendingMovs(u).length;
-  const nav = [
-    ['#/', 'Mi bandeja', 'inbox', myCount],
-    ['#/nuevo', 'Nuevo requerimiento', 'plus'],
-    ['#/expedientes', 'Expedientes', 'folder', db.cases.length],
-    ['#/movimientos', 'Movimientos internos', 'swap', db.movimientos.length],
-    ['#/guia', 'Reglas automatizadas', 'book'],
-    ['#/ajustes', 'Usuarios y datos', 'gear'],
-  ];
-  return h('div', { class: 'app' },
-    h('a', { class: 'skiplink', href: '#main' }, 'Saltar al contenido'),
-    h('aside', { class: 'side' },
-      h('a', { class: 'brand', href: '#/', 'aria-label': 'Detecta Clínica · inicio' },
-        h('img', { src: 'assets/logo.png', alt: 'Detecta Clínica' })),
-      h('p', { class: 'brand-sub' }, 'Gestión del Talento y Cultura'),
-      h('nav', { 'aria-label': 'Principal' }, nav.map(([href, label, icon, n]) =>
-        h('a', { href, class: `nav ${active === href ? 'on' : ''}`, 'aria-current': active === href ? 'page' : false },
-          h('span', { class: `ico ico-${icon}`, 'aria-hidden': 'true' }), h('span', {}, label), n ? h('span', { class: 'badge' }, n) : null))),
-      h('div', { class: 'whoami' },
-        h('label', { for: 'actas', class: 'lbl' }, 'Actuar como (demostración)'),
-        h('select', { id: 'actas', class: 'inp', onchange: (e) => { store.setCurrentUser(e.target.value); route(); window.scrollTo(0, 0); } },
-          Object.entries(ROLES).map(([r, rl]) => h('optgroup', { label: rl }, store.users().filter((x) => x.role === r).map((x) => h('option', { value: x.id, selected: x.id === u.id }, x.name))))),
-        h('p', { class: 'muted small' }, `${u.cargo}`),
-        h('p', { id: 'savestate', class: 'savestate' }, 'Guardado automático activo'))),
-    h('main', { id: 'main', tabindex: '-1' }, content));
-}
+export function caseMeta(c) { return { ...c, tipoPuesto: c.forms.RQ.data.tipo_puesto }; }
 
-/* ════════════════════ Bandeja ════════════════════ */
-export function viewInbox() {
-  const u = store.currentUser();
-  const mine = pendingFor(u);
-  const movs = pendingMovs(u);
-  const db = store.getDB();
-  const abiertos = db.cases.filter((c) => !stageOf(c).closed);
-  const riesgo = abiertos.filter((c) => ['riesgo', 'vencido'].includes(plazo(caseMeta(c)).estado));
-  const hora = new Date().getHours();
-  const saludo = hora < 12 ? 'Buenos días' : hora < 19 ? 'Buenas tardes' : 'Buenas noches';
-
-  return h('div', { class: 'page' },
-    h('header', { class: 'hero' },
-      h('div', { class: 'hero-hi' },
-        detecto(mine.length + movs.length ? 'idle' : 'happy', 'hero-bot'),
-        h('div', {},
-          h('h1', {}, `${saludo}, ${u.name.split(' ')[0]}.`),
-          h('p', { class: 'lead' }, mine.length + movs.length
-            ? `Soy Detecto. Tienes ${mine.length + movs.length} ${mine.length + movs.length === 1 ? 'documento' : 'documentos'} esperándote. Empieza por el primero: te guío paso a paso.`
-            : 'Soy Detecto. Estás al día: no tienes documentos pendientes.'))),
-      h('dl', { class: 'pulse-strip' },
-        h('div', {}, h('dt', {}, 'Procesos abiertos'), h('dd', {}, abiertos.length)),
-        h('div', { class: riesgo.length ? 'alert' : '' }, h('dt', {}, 'En riesgo de plazo'), h('dd', {}, riesgo.length)),
-        h('div', {}, h('dt', {}, 'Movimientos'), h('dd', {}, db.movimientos.filter((m) => !movStage(m).done).length)))),
-    h('section', { class: 'block' },
-      h('div', { class: 'block-head' }, h('h2', {}, 'Te toca'),
-        u.role === 'jefe' ? h('a', { class: 'btn btn-primary', href: '#/nuevo' }, 'Nuevo requerimiento') : null),
-      mine.length || movs.length
-        ? h('ul', { class: 'tasks' }, mine.map(taskItem), movs.map(movItem))
-        : h('div', { class: 'empty' },
-          h('p', {}, u.role === 'jefe' ? 'Cuando necesites cubrir una posición, inicia un requerimiento: el sistema lo enviará a quien corresponda según el motivo.' : 'Cuando un documento necesite tu firma o tus datos, aparecerá aquí.'),
-          h('a', { class: 'btn btn-ghost', href: '#/expedientes' }, 'Ver todos los expedientes'))),
-    h('section', { class: 'block' }, h('h2', {}, 'Actividad reciente'), recentActivity()));
-}
-
-function caseMeta(c) { return { ...c, tipoPuesto: c.forms.RQ.data.tipo_puesto }; }
-
-function taskItem(c) {
+export function taskItem(c) {
   const st = stageOf(c);
   const d = c.forms.RQ.data;
   const stg = STAGES.find((s) => s.k === st.k);
@@ -98,7 +33,7 @@ function taskItem(c) {
     h('span', { class: 'task-stage' }, h('span', { class: 'stage-dot' }), `${stg?.l || ''}: ${st.note}`),
     slaChip(pl), h('span', { class: 'go' }, 'Continuar')));
 }
-function movItem(m) {
+export function movItem(m) {
   const d = m.form.data;
   return h('li', {}, h('a', { class: 'task', href: `#/movimiento/${m.id}` },
     h('span', { class: 'task-code' }, m.id),
@@ -106,14 +41,14 @@ function movItem(m) {
     h('span', { class: 'task-stage' }, h('span', { class: 'stage-dot' }), movStage(m).label), h('span', {}), h('span', { class: 'go' }, 'Continuar')));
 }
 
-function slaChip(pl) {
+export function slaChip(pl) {
   if (pl.estado === 'pendiente') return h('span', { class: 'sla sla-na', title: 'El plazo corre desde la validación de GTC' }, 'Plazo aún no inicia');
   const txt = pl.estado === 'cerrado' ? `Cubierto en ${pl.usados} d.ú.` : `${pl.usados} de ${pl.total} días útiles`;
   return h('span', { class: `sla sla-${pl.estado}`, title: `Anexo 5 PRC-GTC-02 · ${pl.tipo.l}` }, txt);
 }
 
-function recentActivity() {
-  const db = store.getDB();
+export function recentActivity(cases = store.getDB().cases, movs = store.getDB().movimientos) {
+  const db = { cases, movimientos: movs };
   const items = [...db.cases.flatMap((c) => (c.timeline || []).map((t) => ({ ...t, ref: c.id, href: `#/caso/${c.id}` }))),
     ...db.movimientos.flatMap((m) => (m.timeline || []).map((t) => ({ ...t, ref: m.id, href: `#/movimiento/${m.id}` })))]
     .sort((a, b) => b.at.localeCompare(a.at)).slice(0, 8);
@@ -134,39 +69,7 @@ export function viewNew() {
   return h('div', { class: 'page' }, h('p', {}, 'Creando expediente…'));
 }
 
-/* ════════════════════ Expedientes ════════════════════ */
-export function viewCases() {
-  const db = store.getDB();
-  let filtro = sessionStorage.getItem('f-exp') || 'abiertos';
-  const list = () => db.cases.filter((c) => {
-    const st = stageOf(c);
-    return filtro === 'todos' || (filtro === 'abiertos' ? !st.closed : !!st.closed);
-  });
-  const body = h('div');
-  const draw = () => {
-    const rows = list();
-    body.replaceChildren(rows.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl tbl-list' },
-      h('thead', {}, h('tr', {}, ['Código', 'Puesto', 'Motivo', 'Avance', 'Etapa actual', 'Plazo'].map((t) => h('th', {}, t)))),
-      h('tbody', {}, rows.map((c) => {
-        const d = c.forms.RQ.data; const st = stageOf(c);
-        return h('tr', { class: 'clickable', tabindex: 0, onclick: () => go(`#/caso/${c.id}`), onkeydown: (e) => { if (e.key === 'Enter') go(`#/caso/${c.id}`); } },
-          h('td', { class: 'mono' }, c.id),
-          h('td', {}, h('strong', {}, d.puesto || '—'), h('br'), h('span', { class: 'muted small' }, d.area || '')),
-          h('td', {}, motivoLabel(d.motivo)),
-          h('td', {}, miniRibbon(c)),
-          h('td', {}, st.closed ? h('span', { class: `tag tag-${st.closed}` }, st.note) : h('span', {}, st.note, h('br'), h('span', { class: 'muted small' }, st.roles.map((r) => ROLES[r]).join(' / ')))),
-          h('td', {}, slaChip(plazo(caseMeta(c)))));
-      })))) : h('div', { class: 'empty' }, h('p', {}, 'No hay expedientes en este filtro.')));
-  };
-  draw();
-  return h('div', { class: 'page' },
-    h('div', { class: 'block-head' }, h('h1', {}, 'Expedientes de selección'),
-      h('div', { class: 'seg', role: 'tablist' }, [['abiertos', 'En curso'], ['cerrados', 'Cerrados'], ['todos', 'Todos']].map(([k, l]) =>
-        h('button', { role: 'tab', 'aria-selected': filtro === k, class: filtro === k ? 'on' : '', onclick: (e) => { filtro = k; sessionStorage.setItem('f-exp', k); e.target.parentElement.querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b === e.target); b.setAttribute('aria-selected', b === e.target); }); draw(); } }, l)))),
-    body);
-}
-
-function miniRibbon(c) {
+export function miniRibbon(c) {
   const st = stageOf(c); const ap = st.applies;
   const idx = st.k === 'fin' ? STAGES.length : STAGES.findIndex((s) => s.k === st.k);
   return h('span', { class: 'mini', 'aria-label': `Etapa ${idx + 1} de ${STAGES.length}` }, STAGES.map((s, i) => {
@@ -232,15 +135,14 @@ export function viewCase(id, tab, sub) {
   const caso = store.getCase(id);
   if (!caso) return notFound('No existe el expediente ' + id);
   const u = store.currentUser();
+  if (!canOpenCase(u, caso)) return notFound('Este expediente no corresponde a tu portal.');
   const st = stageOf(caso);
   const d = caso.forms.RQ.data;
-  if (!tab) tab = STAGES.find((s) => s.k === st.k)?.form || 'RQ';
-  if (!formAvailable(caso, tab)) tab = 'RQ';
-
-  const tabs = [['RQ', 'Requerimiento']];
-  if (formAvailable(caso, 'PERFIL')) tabs.push(['PERFIL', 'Perfil del puesto']);
-  if (formAvailable(caso, 'FICHA')) tabs.push(['FICHA', 'Entrevistas']);
-  tabs.push(['HIST', 'Historial']);
+  const allowed = caseTabsFor(u, caso).filter((k) => k === 'HIST' || formAvailable(caso, k));
+  const LABELS = { RQ: 'Requerimiento', PERFIL: 'Perfil del puesto', FICHA: 'Entrevistas', HIST: 'Historial' };
+  if (!tab) tab = STAGES.find((s) => s.k === st.k)?.form || allowed[0];
+  if (!allowed.includes(tab)) tab = allowed[0];
+  const tabs = allowed.map((k) => [k, LABELS[k]]);
 
   const pick = (k, s2) => go(`#/caso/${id}/${k}${s2 ? '/' + s2 : ''}`);
   let panel;
@@ -254,7 +156,7 @@ export function viewCase(id, tab, sub) {
   return h('div', { class: 'page page-case' },
     h('header', { class: 'case-head' },
       h('div', {},
-        h('p', { class: 'crumbs' }, h('a', { href: '#/expedientes' }, 'Expedientes'), ' / ', h('span', { class: 'mono' }, caso.id)),
+        h('p', { class: 'crumbs' }, h('a', { href: listHref(u) }, '← Volver'), ' · ', h('span', { class: 'mono' }, caso.id)),
         h('h1', {}, d.puesto || 'Nuevo requerimiento de personal'),
         h('p', { class: 'case-tags' },
           d.area ? h('span', { class: 'tag' }, d.area) : null,
@@ -265,13 +167,13 @@ export function viewCase(id, tab, sub) {
       h('div', { class: 'case-side' }, slaChip(plazo(caseMeta(caso))),
         st.closed ? h('span', { class: `closed-badge tag tag-${st.closed}` }, st.closed === 'completado' ? detecto('happy', 'tiny') : null, st.note) : h('p', { class: 'next' }, h('span', { class: 'muted' }, 'Siguiente: '), `${st.note} · `, h('strong', {}, st.roles.map((r) => ROLES[r]).join(' / '))))),
     h('div', { class: 'case-body' },
-      h('aside', { class: 'case-rail' }, ribbon(caso, tab, (k) => pick(k))),
+      h('aside', { class: 'case-rail' }, ribbon(caso, tab, (k) => { if (allowed.includes(k)) pick(k); })),
       h('div', { class: 'case-main' },
         h('div', { class: 'tabs', role: 'tablist' }, tabs.map(([k, l]) => h('button', { role: 'tab', 'aria-selected': tab === k, class: tab === k ? 'on' : '', onclick: () => pick(k) }, l))),
         panel)));
 }
 
-function history(entity) {
+export function history(entity) {
   return h('div', { class: 'panel' }, h('h2', {}, 'Historial del expediente'),
     h('p', { class: 'muted' }, 'Registro inalterable de cada acción, con fecha, hora y responsable.'),
     h('ol', { class: 'feed feed-full' }, (entity.timeline || []).map((t) => h('li', {}, h('time', {}, fmtDate(t.at, true)), h('span', {}, h('strong', {}, t.by), t.role ? h('span', { class: 'muted' }, ` (${ROLES[t.role] || t.role})`) : null, ' ', t.text)))));
@@ -621,8 +523,8 @@ function fichaPanel(caso, dni) {
 
 /* ════════════════════ Movimientos internos ════════════════════ */
 export function viewMovs() {
-  const db = store.getDB();
   const u = store.currentUser();
+  const db = { movimientos: store.getDB().movimientos.filter((m) => canOpenMov(u, m)) };
   return h('div', { class: 'page' },
     h('div', { class: 'block-head' }, h('h1', {}, 'Movimientos internos de personal'),
       ['analista', 'gtc', 'jefe'].includes(u.role) ? h('button', { class: 'btn btn-primary', onclick: () => { const m = store.createMov(u); go(`#/movimiento/${m.id}`); } }, 'Registrar movimiento') : null),
@@ -638,6 +540,7 @@ export function viewMovs() {
 export function viewMov(id) {
   const m = store.getMov(id);
   if (!m) return notFound('No existe el movimiento ' + id);
+  if (!canOpenMov(store.currentUser(), m)) return notFound('Este movimiento no corresponde a tu portal.');
   return h('div', { class: 'page' },
     h('p', { class: 'crumbs' }, h('a', { href: '#/movimientos' }, 'Movimientos'), ' / ', h('span', { class: 'mono' }, m.id), m.casoId ? [' · vinculado a ', h('a', { href: `#/caso/${m.casoId}/ING` }, m.casoId)] : null),
     h('div', { class: 'mov-layout' },
@@ -669,35 +572,6 @@ export function viewGuide() {
       ))));
 }
 
-/* ════════════════════ Ajustes ════════════════════ */
-export function viewSettings() {
-  const list = h('div');
-  const draw = () => list.replaceChildren(h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
-    h('thead', {}, h('tr', {}, ['Nombre', 'Cargo', 'Rol en el flujo', ''].map((t) => h('th', {}, t)))),
-    h('tbody', {}, store.users().map((u) => h('tr', {},
-      h('td', {}, h('input', { class: 'inp', value: u.name, 'aria-label': 'Nombre', onchange: (e) => { store.saveUser({ ...u, name: e.target.value }); } })),
-      h('td', {}, h('input', { class: 'inp', value: u.cargo, 'aria-label': 'Cargo', onchange: (e) => { store.saveUser({ ...u, cargo: e.target.value }); } })),
-      h('td', {}, h('select', { class: 'inp', 'aria-label': 'Rol', onchange: (e) => store.saveUser({ ...u, role: e.target.value }) }, Object.entries(ROLES).map(([k, l]) => h('option', { value: k, selected: u.role === k }, l)))),
-      h('td', {}, h('button', { class: 'btn-x', title: 'Eliminar', 'aria-label': `Eliminar a ${u.name}`, onclick: () => { if (store.users().length > 1) { store.removeUser(u.id); draw(); } } }, '×'))))))),
-    h('button', { class: 'btn btn-ghost btn-sm add-row', onclick: () => { store.saveUser({ name: 'Nuevo usuario', cargo: 'Cargo', role: 'jefe', area: '' }); draw(); } }, '+ Agregar usuario'));
-  draw();
-  const fileIn = h('input', { type: 'file', accept: 'application/json', hidden: true, onchange: async (e) => {
-    try { store.importJSON(await e.target.files[0].text()); toast('Respaldo importado.'); route(); } catch (err) { toast(err.message, 'warn'); }
-  } });
-  return h('div', { class: 'page page-narrow' },
-    h('h1', {}, 'Usuarios y datos'),
-    h('section', { class: 'block' }, h('h2', {}, 'Usuarios del flujo'), h('p', { class: 'muted' }, 'Cada rol habilita qué secciones puede llenar y qué casilleros puede firmar. En producción, estos usuarios vendrán del inicio de sesión institucional.'), list),
-    h('section', { class: 'block' }, h('h2', {}, 'Parámetros'),
-      h('label', { class: 'decl' }, h('input', { type: 'checkbox', checked: CONFIG.DM_FIRMA_TODO_ASISTENCIAL, onchange: (e) => { CONFIG.DM_FIRMA_TODO_ASISTENCIAL = e.target.checked; localStorage.setItem('detecta-gtc:dm', e.target.checked ? '1' : '0'); toast('Parámetro actualizado.'); } }),
-        h('span', {}, 'Exigir firma de Dirección Médica en todo requerimiento asistencial, aunque sea reemplazo o suplencia (como indica el formato RQ físico; PRC-GTC-01 no lo exige).'))),
-    h('section', { class: 'block' }, h('h2', {}, 'Respaldo'),
-      h('p', { class: 'muted' }, 'Esta versión guarda la información en este navegador. Exporta un respaldo con frecuencia o conecta una base de datos (ver README).'),
-      h('div', { class: 'row-btns' },
-        h('button', { class: 'btn btn-primary', onclick: () => { const a = h('a', { href: URL.createObjectURL(new Blob([store.exportJSON()], { type: 'application/json' })), download: `detecta-gtc-respaldo-${todayISO()}.json` }); a.click(); } }, 'Exportar respaldo'),
-        h('button', { class: 'btn btn-ghost', onclick: () => fileIn.click() }, 'Importar respaldo'), fileIn,
-        h('button', { class: 'btn btn-danger', onclick: async () => { if (await confirmModal({ title: 'Restablecer datos', body: 'Se borrarán todos los expedientes de este navegador y se cargarán los ejemplos de demostración.', ok: 'Restablecer', danger: true })) { store.resetAll(true); route(); } } }, 'Restablecer demostración'))));
-}
-
 /* ════════════════════ Impresión ════════════════════ */
 export function viewPrint(kind, id, formKey, dni) {
   const entity = kind === 'caso' ? store.getCase(id) : store.getMov(id);
@@ -725,27 +599,5 @@ export function viewPrint(kind, id, formKey, dni) {
     h('p', { class: 'p-foot' }, `Doble conformidad: ${conf.completa ? 'COMPLETA' : 'PENDIENTE'}. Documento generado por la plataforma digital de GTC de Detecta Clínica. Toda copia impresa es una copia no controlada.`));
 }
 
-function notFound(msg) { return h('div', { class: 'page' }, h('h1', {}, 'No encontrado'), h('p', {}, msg), h('a', { class: 'btn btn-ghost', href: '#/' }, 'Ir a mi bandeja')); }
+export function notFound(msg) { return h('div', { class: 'page' }, h('h1', {}, 'No encontrado'), h('p', {}, msg), h('a', { class: 'btn btn-ghost', href: '#/' }, 'Ir al inicio')); }
 
-/* ════════════════════ Router ════════════════════ */
-export function route() {
-  const app = document.getElementById('app');
-  const parts = (location.hash.replace(/^#\/?/, '') || '').split('/').filter(Boolean);
-  const [a, b, c, d2] = parts;
-  document.body.classList.toggle('printing', a === 'imprimir');
-  if (a === 'imprimir') { app.replaceChildren(viewPrint(b, c, d2, parts[4])); return; }
-  let view; let active = '#/';
-  switch (a) {
-    case undefined: view = viewInbox(); break;
-    case 'nuevo': view = viewNew(); active = '#/nuevo'; break;
-    case 'expedientes': view = viewCases(); active = '#/expedientes'; break;
-    case 'caso': view = viewCase(b, c, d2); active = '#/expedientes'; break;
-    case 'movimientos': view = viewMovs(); active = '#/movimientos'; break;
-    case 'movimiento': view = viewMov(b); active = '#/movimientos'; break;
-    case 'guia': view = viewGuide(); active = '#/guia'; break;
-    case 'ajustes': view = viewSettings(); active = '#/ajustes'; break;
-    default: view = notFound('La dirección no existe.');
-  }
-  app.replaceChildren(shell(view, active));
-  document.title = `${document.querySelector('main h1')?.textContent || 'GTC'} · Detecta Clínica`;
-}

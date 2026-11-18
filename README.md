@@ -17,9 +17,25 @@ Formatos digitalizados (los cuatro formatos oficiales en PDF):
 
 El análisis campo por campo y las inconsistencias encontradas están en [`docs/ANALISIS_FORMATOS.md`](docs/ANALISIS_FORMATOS.md).
 
+## Portales por rol
+
+Cada persona entra con su **usuario y contraseña** y ve solo su propia ventana:
+
+| Portal | Rol en los procedimientos | Qué hace |
+|---|---|---|
+| Solicitante | Jefe inmediato | Crea requerimientos, sigue su avance y evalúa a los candidatos (entrevista técnica) |
+| Jefatura de GTC | Jefe de GTC | Valida requerimientos, define remuneración, asigna analista, administra usuarios |
+| Analista de Selección | Analista de GTC | Perfil del puesto, terna, fichas de entrevista y cierre del proceso |
+| Dirección Administrativa / Dirección Médica | DA / DM | Aprueba u observa ampliaciones y puestos nuevos de su línea |
+| Gerencia General | GG | Aprobación final de ampliaciones y puestos nuevos |
+| Área de Procesos | Procesos | Valida funciones y actualiza MOF y organigrama de puestos nuevos |
+| Colaborador | Colaborador | Firma sus movimientos internos |
+
+Usuarios de demostración (contraseña `Detecta2026`): `rmedina` y `cparedes` (solicitantes), `jefegtc`, `ltorres` (analista), `dadministrativa`, `dmedica`, `ggeneral`, `procesos`, `colaborador`. La Jefatura de GTC crea y administra usuarios en **Usuarios y datos**; las cuentas nuevas reciben la contraseña inicial y deben cambiarla al ingresar.
+
 ## Qué hace
 
-- **Detecto, el asistente.** Un robot con los colores de la clínica que le dice a cada persona qué le toca hacer y celebra cuando un documento queda con doble conformidad o cuando se completa el procedimiento.
+- **Detecto, el asistente.** El robot de Detecta Clínica que le dice a cada persona qué le toca hacer y celebra cuando un documento queda con doble conformidad o cuando se completa el procedimiento.
 - **Modo guiado.** Quien debe llenar un formato lo hace un paso a la vez, viendo solo las secciones que le corresponden. Al terminar, la plataforma le pide la firma de inmediato.
 - **Firma guardada.** La firma se dibuja una vez y se guarda; las siguientes veces basta con confirmar.
 
@@ -59,10 +75,10 @@ python3 -m http.server 8080
 
 ## Cómo probar el flujo
 
-En el panel izquierdo, **“Actuar como (demostración)”** permite cambiar de usuario y ver el proceso desde cada rol. Vienen dos expedientes de ejemplo:
+Ingresa con cualquiera de los usuarios de demostración y usa **Cerrar sesión** para cambiar de rol. Vienen dos expedientes de ejemplo:
 
-1. **RQ-xxxx-0002 · Enfermera de hospitalización (reemplazo).** Como *Rosa Medina Quispe* (jefa), completa los datos que faltan y firma. Luego, como *Jefe de GTC*, registra la remuneración, asigna la analista y firma. Sigue como *Lucía Torres Ramos* (analista): registra la terna en “Entrevistas”, llena la ficha de cada candidato y remítela a la jefatura. Cuando haya un candidato apto con doble conformidad, cierra el proceso.
-2. **RQ-xxxx-0001 · Asistente de almacén (ampliación).** Ya tiene la aprobación de Dirección Administrativa; falta Gerencia General. Prueba “Observado” para ver cómo vuelve a borrador.
+1. **RQ-xxxx-0002 · Enfermera de hospitalización (reemplazo).** Entra como `rmedina`, completa los datos que faltan y firma. Luego, como `jefegtc`, registra la remuneración, asigna la analista y firma. Sigue como `ltorres`: registra la terna, llena la ficha y remítela. Vuelve como `rmedina` a **Entrevistas por evaluar**, completa la entrevista técnica y firma. Termina como `ltorres`: firma la ficha y cierra el proceso.
+2. **RQ-xxxx-0001 · Asistente de almacén (ampliación).** Ya tiene la aprobación de Dirección Administrativa; entra como `ggeneral` para aprobarla u observarla.
 
 En **Usuarios y datos** puedes renombrar usuarios, exportar o importar un respaldo y restablecer la demostración.
 
@@ -73,6 +89,8 @@ index.html            Entrada
 css/styles.css        Identidad visual (cinta celeste y lima del isotipo)
 assets/               Logo e isotipo
 js/main.js            Arranque
+js/portal.js          Inicio de sesión, portales por rol y navegación
+js/detecto.js         Detecto: mensajes y celebraciones
 js/rules.js           Reglas y parámetros de los procedimientos y anexos
 js/schemas.js         Definición de cada formato: campos, obligatoriedad, firmas y conformidad
 js/engine.js          Motor de formularios y validación
@@ -87,10 +105,10 @@ Para cambiar un formato (agregar un campo, volverlo obligatorio, cambiar quién 
 
 ## Antes de usarlo con datos reales
 
-Esta versión guarda la información **en el navegador de cada equipo** (localStorage). Sirve para validar el flujo con las jefaturas, pero no para operar: cada computadora tendría sus propios datos y el selector “Actuar como” permite firmar por cualquiera. Para producción:
+Esta versión guarda la información **en el navegador de cada equipo** (localStorage) y valida las contraseñas en el propio navegador. Sirve para validar el flujo con las jefaturas, pero no para operar: cada computadora tiene sus propios datos y alguien con conocimientos técnicos podría saltarse el inicio de sesión. Para producción:
 
 1. **Base de datos compartida.** Reemplazar `load()` y `persist()` de `js/store.js` por una API o un servicio como Supabase o Firebase. El resto de la aplicación no cambia.
-2. **Inicio de sesión real** (correo institucional, Microsoft 365 o Google Workspace) y eliminar el selector “Actuar como”. El rol de cada usuario debe venir del servidor.
+2. **Inicio de sesión en un servidor** (o con el correo institucional: Microsoft 365 o Google Workspace). El rol de cada usuario debe venir del servidor, no del navegador.
 3. **Permisos en el servidor**: que solo GTC y los evaluadores puedan leer las fichas de entrevista, y que nadie pueda modificar una sección firmada.
 4. **Protección de datos (Ley N° 29733).** Los expedientes contienen datos personales de candidatos y colaboradores, y las suplencias pueden aludir a licencias médicas. Se requiere hosting con acceso controlado, cifrado, registro del banco de datos ante la ANPD si corresponde y la autorización de tratamiento de los candidatos. Un repositorio público de GitHub **no** debe contener datos reales: solo el código.
 5. **Firma electrónica.** La firma dibujada más el nombre, la declaración, el usuario autenticado y la huella del contenido constituyen una firma electrónica simple. Si Legal requiere mayor valor probatorio (por ejemplo, para el contrato de trabajo), se puede integrar un proveedor de firma digital acreditado.

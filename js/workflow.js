@@ -226,7 +226,7 @@ export function pendingFor(user, list = store.getDB().cases) {
     const st = stageOf(c);
     if (st.closed) return false;
     if (!st.roles.includes(user.role)) return false;
-    if (user.role === 'jefe') return c.createdBy === user.id || st.k === 'entrev';
+    if (user.role === 'jefe') return c.createdBy === user.id;
     if (user.role === 'analista' && c.forms.RQ.data.analista_id && st.k !== 'rq') return c.forms.RQ.data.analista_id === user.id;
     return true;
   });

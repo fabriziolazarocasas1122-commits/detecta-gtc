@@ -1,26 +1,28 @@
 // Capa de datos. Por defecto usa localStorage (ideal para GitHub Pages / demostración).
 // Para producción, reemplace load()/persist() por llamadas a una API o a Supabase/Firebase:
 // el resto de la aplicación solo usa las funciones exportadas aquí.
-import { uid, nowISO, clone } from './util.js';
+import { uid, nowISO, clone, hashOf } from './util.js';
 
-const KEY = 'detecta-gtc:v2';
+const KEY = 'detecta-gtc:v3';
+const SESSION = 'detecta-gtc:sesion';
+export const DEMO_PASSWORD = 'Detecta2026';
 let db = null;
 const listeners = new Set();
 
 const SEED_USERS = [
-  { id: 'u_jefe1', name: 'Rosa Medina Quispe', role: 'jefe', cargo: 'Jefa de Enfermería', area: 'Hospitalización' },
-  { id: 'u_jefe2', name: 'Carlos Paredes León', role: 'jefe', cargo: 'Jefe de Logística', area: 'Logística' },
-  { id: 'u_da', name: 'Directora Administrativa', role: 'da', cargo: 'Director Administrativo', area: 'Dirección Administrativa' },
-  { id: 'u_dm', name: 'Director Médico', role: 'dm', cargo: 'Director Médico', area: 'Dirección Médica' },
-  { id: 'u_gg', name: 'Gerente General', role: 'gg', cargo: 'Gerente General', area: 'Gerencia General' },
-  { id: 'u_gtc', name: 'Jefe de GTC', role: 'gtc', cargo: 'Jefe de Gestión del Talento y Cultura', area: 'Gestión del Talento y Cultura' },
-  { id: 'u_an', name: 'Lucía Torres Ramos', role: 'analista', cargo: 'Analista de Selección', area: 'Gestión del Talento y Cultura' },
-  { id: 'u_proc', name: 'Analista de Procesos', role: 'procesos', cargo: 'Analista de Procesos', area: 'Procesos' },
-  { id: 'u_col', name: 'Colaborador (tablet de firma)', role: 'colaborador', cargo: 'Colaborador', area: '—' },
+  { id: 'u_jefe1', username: 'rmedina', passHash: '08336d0aba5126b9b5e922691e53e4235e6a15fb71ba1bdf4ec43bbafbae3d21', name: 'Rosa Medina Quispe', role: 'jefe', cargo: 'Jefa de Enfermería', area: 'Hospitalización' },
+  { id: 'u_jefe2', username: 'cparedes', passHash: '87706073b51adf0535d79bf531d922c54872aa7e0d4f6479cd9523580fd0c237', name: 'Carlos Paredes León', role: 'jefe', cargo: 'Jefe de Logística', area: 'Logística' },
+  { id: 'u_da', username: 'dadministrativa', passHash: 'c0ec11d9cce7601b1acea8c89f439f1e767fd93aa3c1b952fe8cdee1a6fdedf7', name: 'Mónica Salas Ríos', role: 'da', cargo: 'Director Administrativo', area: 'Dirección Administrativa' },
+  { id: 'u_dm', username: 'dmedica', passHash: '4f67d3b4c44d3ccf9e17e4769c1bb503715ab9b0709019d09330e039b005ede1', name: 'Luis Salazar Peña', role: 'dm', cargo: 'Director Médico', area: 'Dirección Médica' },
+  { id: 'u_gg', username: 'ggeneral', passHash: '5e1a277358e30ad4790aa5f6634d582f9fbdbfef6298a2017c411df7bc97537b', name: 'Jorge Ramírez Castro', role: 'gg', cargo: 'Gerente General', area: 'Gerencia General' },
+  { id: 'u_gtc', username: 'jefegtc', passHash: '5479f205c83dc95ffb60f350bbb729d75dc38bfbd7f55e86688901c3e19009e5', name: 'Andrea Vílchez Soto', role: 'gtc', cargo: 'Jefe de Gestión del Talento y Cultura', area: 'Gestión del Talento y Cultura' },
+  { id: 'u_an', username: 'ltorres', passHash: 'fbbd42d1c93fe279b3643a6e6fa8d918d2791546ab49e228f36312a7207965dd', name: 'Lucía Torres Ramos', role: 'analista', cargo: 'Analista de Selección', area: 'Gestión del Talento y Cultura' },
+  { id: 'u_proc', username: 'procesos', passHash: 'e404bc7a28be7a589adee7665535d1a179f2427cff739c07a782f82d0f8f5d8e', name: 'Diego Huamán Cruz', role: 'procesos', cargo: 'Analista de Procesos', area: 'Procesos' },
+  { id: 'u_col', username: 'colaborador', passHash: '80f96f27d0e1688bc57026fb8f70eb4d25ad0984947c46da9b3b803b211d4ba6', name: 'Pedro Lima Vargas', role: 'colaborador', cargo: 'Colaborador', area: '—' },
 ];
 
 function empty() {
-  return { version: 1, users: clone(SEED_USERS), currentUserId: 'u_jefe1', cases: [], movimientos: [], seq: { RQ: 0, MOV: 0 } };
+  return { version: 1, users: clone(SEED_USERS), cases: [], movimientos: [], seq: { RQ: 0, MOV: 0 } };
 }
 
 export function load() {
@@ -36,8 +38,27 @@ export const onChange = (fn) => listeners.add(fn);
 export const getDB = () => db;
 
 export const users = () => db.users;
-export const currentUser = () => db.users.find((u) => u.id === db.currentUserId) || db.users[0];
-export const setCurrentUser = (id) => { db.currentUserId = id; persist(); };
+// ── Sesión ──
+// Nota: en esta versión estática la validación ocurre en el navegador. En producción
+// el inicio de sesión debe validarse en un servidor (ver README).
+let sessionId = null;
+try { sessionId = sessionStorage.getItem(SESSION); } catch { sessionId = null; }
+export const currentUser = () => (sessionId && db?.users.find((u) => u.id === sessionId)) || null;
+export const passHashFor = (username, password) => hashOf({ u: String(username).trim().toLowerCase(), p: password });
+export async function login(username, password) {
+  const un = String(username || '').trim().toLowerCase();
+  const u = db.users.find((x) => (x.username || '').toLowerCase() === un);
+  if (!u || u.disabled) return null;
+  if ((await passHashFor(un, password)) !== u.passHash) return null;
+  sessionId = u.id;
+  try { sessionStorage.setItem(SESSION, u.id); } catch { /* sin almacenamiento */ }
+  return u;
+}
+export function logout() { sessionId = null; try { sessionStorage.removeItem(SESSION); } catch { /* */ } }
+export async function setPassword(userId, password) {
+  const u = userById(userId); if (!u) return;
+  u.passHash = await passHashFor(u.username, password); u.mustChange = false; persist();
+}
 export const userById = (id) => db.users.find((u) => u.id === id);
 export function saveUser(u) {
   const i = db.users.findIndex((x) => x.id === u.id);
