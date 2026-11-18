@@ -46,7 +46,10 @@ try { sessionId = sessionStorage.getItem(SESSION); } catch { sessionId = null; }
 export const currentUser = () => (sessionId && db?.users.find((u) => u.id === sessionId)) || null;
 export const passHashFor = (username, password) => hashOf({ u: String(username).trim().toLowerCase(), p: password });
 export async function login(username, password) {
-  const un = String(username || '').trim().toLowerCase();
+  let un = String(username || '').trim().toLowerCase();
+  // Usuarios anteriores que se siguen aceptando (la "l" y la "I" se confunden al escribir)
+  const ALIAS = { ltorres: 'analista', itorres: 'analista' };
+  if (ALIAS[un] && db.users.some((x) => x.username === ALIAS[un])) un = ALIAS[un];
   const u = db.users.find((x) => (x.username || '').toLowerCase() === un);
   if (!u || u.disabled) return null;
   if ((await passHashFor(un, password)) !== u.passHash) return null;
