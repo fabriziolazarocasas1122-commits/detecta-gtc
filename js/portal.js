@@ -107,16 +107,21 @@ export function viewLogin() {
   const form = h('form', { class: 'login-form', onsubmit: async (e) => {
     e.preventDefault();
     err.textContent = ''; btn.disabled = true; btn.textContent = 'Verificando…';
-    const u = await store.login(user.value, pass.value);
+    try {
+      await store.login(user.value, pass.value);
+      if (store.REMOTE) CONFIG.DM_FIRMA_TODO_ASISTENCIAL = store.getDB().settings?.DM_FIRMA_TODO_ASISTENCIAL === true;
+    } catch (ex) {
+      btn.disabled = false; btn.textContent = 'Ingresar';
+      err.textContent = ex.message; pass.select(); return;
+    }
     btn.disabled = false; btn.textContent = 'Ingresar';
-    if (!u) { err.textContent = 'Usuario o contraseña incorrectos. Revisa que el usuario esté bien escrito y vuelve a intentarlo.'; pass.select(); return; }
-    location.hash = '#/'; route();
+    location.hash = '#/'; route(); startLiveOnce();
   } },
     h('label', { class: 'lbl', for: 'lg-user' }, 'Usuario'), user,
     h('label', { class: 'lbl', for: 'lg-pass' }, 'Contraseña'), h('div', { class: 'pass-row' }, pass, eye),
     err, btn);
 
-  const demo = h('details', { class: 'demo-users' },
+  const demo = store.REMOTE ? null : h('details', { class: 'demo-users' },
     h('summary', {}, 'Usuarios de demostración'),
     h('p', { class: 'muted small' }, `Contraseña de todos: ${store.DEMO_PASSWORD}. Toca un usuario para completarlo.`),
     h('ul', {}, store.users().filter((u) => !u.disabled).map((u) => h('li', {}, h('button', { type: 'button', onclick: () => { user.value = u.username; pass.value = store.DEMO_PASSWORD; btn.focus(); } },
@@ -157,7 +162,7 @@ function shell(content, active) {
         h('div', { class: 'me' }, h('span', { class: 'me-av', 'aria-hidden': 'true' }, initials), h('span', {}, h('strong', {}, u.name), h('br'), h('span', { class: 'small' }, u.cargo))),
         h('div', { class: 'me-actions' },
           h('button', { class: 'btn btn-side btn-sm', onclick: () => passwordModal(u) }, 'Cambiar contraseña'),
-          h('button', { class: 'btn btn-side btn-sm', onclick: () => { store.logout(); location.hash = '#/'; route(); } }, 'Cerrar sesión')),
+          h('button', { class: 'btn btn-side btn-sm', onclick: async (e) => { e.target.disabled = true; await store.logout(); location.hash = '#/'; route(); } }, 'Cerrar sesión')),
         h('p', { id: 'savestate', class: 'savestate' }, 'Guardado automático activo'))),
     h('main', { id: 'main', tabindex: '-1' }, content));
 }
@@ -302,51 +307,92 @@ function viewDecisions() {
 }
 
 /* ════════════ Usuarios (solo Jefatura de GTC) ════════════ */
+const run = async (fn, ok) => { try { await fn(); if (ok) toast(ok); return true; } catch (e) { toast(e.message || String(e), 'warn'); return false; } };
+
+function askPassword(title, body) {
+  return new Promise((resolve) => {
+    const inp = h('input', { class: 'inp', type: 'text', autocomplete: 'off', 'aria-label': 'Contraseña temporal' });
+    const msg = h('p', { class: 'err' });
+    const close = (v) => { bg.remove(); resolve(v); };
+    const bg = h('div', { class: 'modal-bg' }, h('form', { class: 'modal modal-sm', role: 'dialog', 'aria-modal': 'true', onsubmit: (e) => {
+      e.preventDefault();
+      if (inp.value.length < 8) { msg.textContent = 'Mínimo 8 caracteres.'; return; }
+      close(inp.value);
+    } },
+      h('header', {}, h('h2', {}, title), h('p', { class: 'muted' }, body)),
+      h('label', { class: 'lbl' }, 'Contraseña temporal (mínimo 8 caracteres)'), inp, msg,
+      h('footer', {}, h('button', { type: 'button', class: 'btn btn-ghost', onclick: () => close(null) }, 'Cancelar'), h('button', { class: 'btn btn-primary', type: 'submit' }, 'Guardar'))));
+    document.body.append(bg); inp.focus();
+  });
+}
+
 function viewUsers() {
+  const me = store.currentUser();
   const list = h('div');
   const draw = () => list.replaceChildren(h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl' },
-    h('thead', {}, h('tr', {}, ['Nombre', 'Usuario', 'Cargo', 'Portal', ''].map((t) => h('th', {}, t)))),
-    h('tbody', {}, store.users().map((u) => h('tr', {},
-      h('td', {}, h('input', { class: 'inp', value: u.name, 'aria-label': 'Nombre', onchange: (e) => store.saveUser({ ...u, name: e.target.value.trim() || u.name }) })),
+    h('thead', {}, h('tr', {}, ['Nombre', 'Usuario', 'Cargo', 'Portal', 'Estado', ''].map((t) => h('th', {}, t)))),
+    h('tbody', {}, store.users().map((u) => h('tr', { class: u.disabled ? 'row-off' : '' },
+      h('td', {}, h('input', { class: 'inp', value: u.name, 'aria-label': 'Nombre', onchange: (e) => run(() => store.adminUpdateUser(u.id, { name: e.target.value.trim() }), 'Nombre actualizado.') })),
       h('td', { class: 'mono' }, u.username),
-      h('td', {}, h('input', { class: 'inp', value: u.cargo, 'aria-label': 'Cargo', onchange: (e) => store.saveUser({ ...u, cargo: e.target.value }) })),
-      h('td', {}, h('select', { class: 'inp', 'aria-label': 'Portal', disabled: u.id === store.currentUser().id, onchange: (e) => { store.saveUser({ ...u, role: e.target.value }); draw(); } }, Object.keys(PORTALS).map((k) => h('option', { value: k, selected: u.role === k }, PORTALS[k].title)))),
+      h('td', {}, h('input', { class: 'inp', value: u.cargo, 'aria-label': 'Cargo', onchange: (e) => run(() => store.adminUpdateUser(u.id, { cargo: e.target.value }), 'Cargo actualizado.') })),
+      h('td', {}, h('select', { class: 'inp', 'aria-label': 'Portal', disabled: u.id === me.id, onchange: async (e) => { await run(() => store.adminUpdateUser(u.id, { role: e.target.value }), 'Portal actualizado.'); draw(); } }, Object.keys(PORTALS).map((k) => h('option', { value: k, selected: u.role === k }, PORTALS[k].title)))),
+      h('td', {}, u.disabled ? h('span', { class: 'tag tag-desaprobado' }, 'Desactivado') : h('span', { class: 'tag tag-ok' }, u.mustChange ? 'Activo · clave temporal' : 'Activo')),
       h('td', { class: 'row-actions' },
-        h('button', { class: 'btn btn-ghost btn-sm', onclick: async () => { if (await confirmModal({ title: 'Restablecer contraseña', body: `La contraseña de ${u.name} volverá a ser ${store.DEMO_PASSWORD}. Pídele que la cambie al ingresar.`, ok: 'Restablecer' })) { await store.setPassword(u.id, store.DEMO_PASSWORD); store.saveUser({ ...store.userById(u.id), mustChange: true }); toast('Contraseña restablecida.'); } } }, 'Restablecer clave'),
-        u.id !== store.currentUser().id ? h('button', { class: 'btn-x', title: 'Eliminar', 'aria-label': `Eliminar a ${u.name}`, onclick: async () => { if (await confirmModal({ title: 'Eliminar usuario', body: `${u.name} ya no podrá ingresar. Sus firmas anteriores se conservan.`, ok: 'Eliminar', danger: true })) { store.removeUser(u.id); draw(); } } }, '×') : null)))))));
+        h('button', { class: 'btn btn-ghost btn-sm', onclick: async () => {
+          const pw = store.REMOTE ? await askPassword('Restablecer contraseña', `Escribe una contraseña temporal para ${u.name}. Al ingresar se le pedirá crear una propia.`) : store.DEMO_PASSWORD;
+          if (!pw) return;
+          if (!store.REMOTE && !(await confirmModal({ title: 'Restablecer contraseña', body: `La contraseña de ${u.name} volverá a ser ${store.DEMO_PASSWORD}.`, ok: 'Restablecer' }))) return;
+          await run(() => store.adminResetPassword(u.id, pw), 'Contraseña restablecida. Comunícasela a la persona por un canal privado.');
+          draw();
+        } }, 'Restablecer clave'),
+        u.id !== me.id ? h('button', { class: 'btn btn-ghost btn-sm', onclick: async () => {
+          const act = u.disabled;
+          if (!act && !(await confirmModal({ title: 'Desactivar usuario', body: `${u.name} ya no podrá ingresar. Sus firmas y registros anteriores se conservan.`, ok: 'Desactivar', danger: true }))) return;
+          await run(() => store.adminSetActive(u.id, act), act ? 'Usuario reactivado.' : 'Usuario desactivado.');
+          draw();
+        } }, u.disabled ? 'Reactivar' : 'Desactivar') : null)))))));
   draw();
 
   const nName = h('input', { class: 'inp', placeholder: 'Nombre completo', 'aria-label': 'Nombre completo' });
   const nUser = h('input', { class: 'inp', placeholder: 'usuario', 'aria-label': 'Usuario', autocapitalize: 'none' });
   const nCargo = h('input', { class: 'inp', placeholder: 'Cargo', 'aria-label': 'Cargo' });
   const nRole = h('select', { class: 'inp', 'aria-label': 'Portal' }, Object.keys(PORTALS).map((k) => h('option', { value: k }, PORTALS[k].title)));
+  const nPass = h('input', { class: 'inp', placeholder: 'Contraseña temporal', 'aria-label': 'Contraseña temporal', autocomplete: 'off', value: store.REMOTE ? '' : store.DEMO_PASSWORD });
   const msg = h('p', { class: 'err' });
   const add = h('form', { class: 'addcand', onsubmit: async (e) => {
     e.preventDefault(); msg.textContent = '';
     const un = nUser.value.trim().toLowerCase();
     if (nName.value.trim().length < 5) { msg.textContent = 'Escribe el nombre completo.'; return nName.focus(); }
-    if (!/^[a-z0-9._-]{4,30}$/.test(un)) { msg.textContent = 'El usuario debe tener de 4 a 30 caracteres, sin espacios ni tildes.'; return nUser.focus(); }
+    if (!/^[a-z0-9._-]{3,30}$/.test(un)) { msg.textContent = 'El usuario debe tener de 3 a 30 caracteres: minúsculas, números, punto o guion, sin espacios ni tildes.'; return nUser.focus(); }
     if (store.users().some((x) => x.username === un)) { msg.textContent = 'Ese usuario ya existe.'; return nUser.focus(); }
-    store.saveUser({ name: nName.value.trim(), username: un, cargo: nCargo.value.trim() || PORTALS[nRole.value].who, role: nRole.value, area: '', passHash: await store.passHashFor(un, store.DEMO_PASSWORD), mustChange: true });
-    toast(`Usuario creado. Contraseña inicial: ${store.DEMO_PASSWORD}`); route();
-  } }, h('div', { class: 'addcand-row' }, nName, nUser, nCargo, nRole, h('button', { class: 'btn btn-primary btn-sm', type: 'submit' }, 'Crear usuario')), msg);
+    if (nPass.value.length < 8) { msg.textContent = 'La contraseña temporal debe tener al menos 8 caracteres.'; return nPass.focus(); }
+    const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true;
+    const ok = await run(() => store.adminCreateUser({ name: nName.value.trim(), username: un, cargo: nCargo.value.trim() || PORTALS[nRole.value].who, role: nRole.value, password: nPass.value }), `Usuario creado. Entrega a la persona su usuario (${un}) y la contraseña temporal.`);
+    btn.disabled = false;
+    if (ok) route();
+  } }, h('div', { class: 'addcand-row' }, nName, nUser, nCargo, nRole, nPass, h('button', { class: 'btn btn-primary btn-sm', type: 'submit' }, 'Crear usuario')), msg);
 
   const fileIn = h('input', { type: 'file', accept: 'application/json', hidden: true, onchange: async (e) => {
     try { store.importJSON(await e.target.files[0].text()); toast('Respaldo importado.'); route(); } catch (err) { toast(err.message, 'warn'); }
   } });
   return h('div', { class: 'page page-narrow' },
     h('h1', {}, 'Usuarios y datos'),
-    h('p', { class: 'lead' }, 'Cada usuario entra a su propio portal según su rol. Las personas nuevas reciben una contraseña inicial y deben cambiarla al ingresar.'),
+    h('p', { class: 'lead' }, 'Cada usuario entra a su propio portal según su rol. Las cuentas nuevas reciben una contraseña temporal y deben cambiarla al ingresar. Desactivar a alguien conserva sus firmas anteriores.'),
+    store.REMOTE ? h('p', { class: 'tag tag-ok conn-tag' }, 'Conectado a la base de datos compartida') : h('p', { class: 'tag tag-warn conn-tag' }, 'Modo demostración: los datos se guardan solo en este navegador'),
     h('section', { class: 'block' }, h('h2', {}, 'Usuarios'), list, h('h3', { class: 'sub-h' }, 'Agregar usuario'), add),
     h('section', { class: 'block' }, h('h2', {}, 'Parámetros'),
-      h('label', { class: 'decl' }, h('input', { type: 'checkbox', checked: CONFIG.DM_FIRMA_TODO_ASISTENCIAL, onchange: (e) => { CONFIG.DM_FIRMA_TODO_ASISTENCIAL = e.target.checked; localStorage.setItem('detecta-gtc:dm', e.target.checked ? '1' : '0'); toast('Parámetro actualizado.'); } }),
+      h('label', { class: 'decl' }, h('input', { type: 'checkbox', checked: CONFIG.DM_FIRMA_TODO_ASISTENCIAL, onchange: async (e) => {
+        const v = e.target.checked;
+        if (await run(() => store.saveSetting('DM_FIRMA_TODO_ASISTENCIAL', v), 'Parámetro actualizado.')) { CONFIG.DM_FIRMA_TODO_ASISTENCIAL = v; if (!store.REMOTE) localStorage.setItem('detecta-gtc:dm', v ? '1' : '0'); }
+        else e.target.checked = !v;
+      } }),
         h('span', {}, 'Exigir firma de Dirección Médica en todo requerimiento asistencial, aunque sea reemplazo o suplencia (como indica el formato RQ físico; PRC-GTC-01 no lo exige).'))),
     h('section', { class: 'block' }, h('h2', {}, 'Respaldo'),
-      h('p', { class: 'muted' }, 'Esta versión guarda la información en este navegador. Exporta un respaldo con frecuencia o conecta una base de datos (ver README).'),
+      h('p', { class: 'muted' }, store.REMOTE ? 'La información se guarda en la base de datos de Supabase, que hace copias de seguridad automáticas según el plan contratado. Aquí puedes descargar una copia de lo que tienes visible.' : 'Esta versión guarda la información en este navegador. Exporta un respaldo con frecuencia.'),
       h('div', { class: 'row-btns' },
         h('button', { class: 'btn btn-primary', onclick: () => { const a = h('a', { href: URL.createObjectURL(new Blob([store.exportJSON()], { type: 'application/json' })), download: `detecta-gtc-respaldo-${todayISO()}.json` }); a.click(); } }, 'Exportar respaldo'),
-        h('button', { class: 'btn btn-ghost', onclick: () => fileIn.click() }, 'Importar respaldo'), fileIn,
-        h('button', { class: 'btn btn-danger', onclick: async () => { if (await confirmModal({ title: 'Restablecer datos', body: 'Se borrarán todos los expedientes y usuarios de este navegador y se cargarán los de demostración.', ok: 'Restablecer', danger: true })) { store.resetAll(true); store.logout(); route(); } } }, 'Restablecer demostración'))));
+        store.REMOTE ? null : h('button', { class: 'btn btn-ghost', onclick: () => fileIn.click() }, 'Importar respaldo'), fileIn,
+        store.REMOTE ? null : h('button', { class: 'btn btn-danger', onclick: async () => { if (await confirmModal({ title: 'Restablecer datos', body: 'Se borrarán todos los expedientes y usuarios de este navegador y se cargarán los de demostración.', ok: 'Restablecer', danger: true })) { store.resetAll(true); await store.logout(); route(); } } }, 'Restablecer demostración'))));
 }
 
 /* ════════════ Cambio de contraseña ════════════ */
@@ -358,10 +404,13 @@ export function passwordModal(u, forced = false) {
   const close = () => bg.remove();
   const bg = h('div', { class: 'modal-bg' }, h('form', { class: 'modal modal-sm', role: 'dialog', 'aria-modal': 'true', onsubmit: async (e) => {
     e.preventDefault(); msg.textContent = '';
-    if ((await store.passHashFor(u.username, cur.value)) !== store.userById(u.id).passHash) { msg.textContent = 'La contraseña actual no es correcta.'; return cur.focus(); }
     if (n1.value.length < 8) { msg.textContent = 'La nueva contraseña debe tener al menos 8 caracteres.'; return n1.focus(); }
     if (n1.value !== n2.value) { msg.textContent = 'Las contraseñas nuevas no coinciden.'; return n2.focus(); }
-    await store.setPassword(u.id, n1.value); close(); toast('Contraseña actualizada.'); route();
+    if (n1.value === cur.value) { msg.textContent = 'La nueva contraseña debe ser distinta de la actual.'; return n1.focus(); }
+    const sb = e.target.querySelector('button[type=submit]'); sb.disabled = true;
+    if (!(await store.checkPassword(u, cur.value))) { sb.disabled = false; msg.textContent = 'La contraseña actual no es correcta.'; return cur.focus(); }
+    try { await store.changeMyPassword(n1.value); } catch (ex) { sb.disabled = false; msg.textContent = ex.message || String(ex); return; }
+    close(); toast('Contraseña actualizada.'); route();
   } },
     h('header', {}, h('h2', {}, forced ? 'Crea tu contraseña personal' : 'Cambiar contraseña'), forced ? h('p', { class: 'muted' }, 'Estás usando la contraseña inicial. Cámbiala para proteger tus firmas.') : null),
     h('label', { class: 'lbl' }, 'Contraseña actual'), cur,
@@ -370,6 +419,25 @@ export function passwordModal(u, forced = false) {
     h('footer', {}, forced ? null : h('button', { type: 'button', class: 'btn btn-ghost', onclick: close }, 'Cancelar'), h('button', { class: 'btn btn-primary', type: 'submit' }, 'Guardar'))));
   document.body.append(bg);
   cur.focus();
+}
+
+/* ════════════ Cambios en vivo ════════════ */
+let liveStarted = false;
+let pendingRender = false;
+export function startLiveOnce() {
+  if (liveStarted || !store.REMOTE || !store.currentUser()) return;
+  liveStarted = true;
+  store.startLive(() => {
+    // No interrumpir a quien está escribiendo: se actualiza al salir del campo
+    const a = document.activeElement;
+    if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName) && !a.closest('.login') ) { pendingRender = true; return; }
+    if (document.querySelector('.modal-bg')) { pendingRender = true; return; }
+    route();
+  }).catch((e) => console.warn('Sin actualización en vivo', e));
+  document.addEventListener('focusout', () => setTimeout(() => {
+    const a = document.activeElement;
+    if (pendingRender && !(a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) && !document.querySelector('.modal-bg')) { pendingRender = false; route(); }
+  }, 300));
 }
 
 /* ════════════ Router ════════════ */

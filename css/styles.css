@@ -617,3 +617,9 @@ main:focus, main:focus-visible { outline: none; }
   .portal-id { display: none; }
   .whoami { width: auto; }
 }
+
+.savestate[data-state="saving"] { color: #E7E79A; }
+.savestate[data-state="error"] { color: #FFB4A8; font-weight: 500; }
+.savestate[data-state="warn"] { color: #FFD38A; }
+.row-off td { opacity: .55; }
+.conn-tag { margin-top: 14px; display: inline-flex; }

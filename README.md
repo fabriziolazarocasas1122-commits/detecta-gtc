@@ -96,20 +96,31 @@ js/schemas.js         Definición de cada formato: campos, obligatoriedad, firma
 js/engine.js          Motor de formularios y validación
 js/workflow.js        Etapas, firmas, bloqueo, doble conformidad, bandejas
 js/signature.js       Lienzo de firma y confirmaciones
-js/store.js           Almacenamiento (localStorage) y datos de demostración
+js/store.js           Datos: navegador (demostración) o base de datos compartida
+js/backend.js         Conexión con Supabase
+js/config.js          URL y clave pública del proyecto Supabase
+supabase/schema.sql   Tablas, reglas de acceso y protección de firmas
+supabase/functions/   Función admin-users (cuentas de usuario)
 js/views.js           Pantallas
 docs/                 Análisis de formatos
 ```
 
 Para cambiar un formato (agregar un campo, volverlo obligatorio, cambiar quién firma) se edita **solo** `js/schemas.js`. Para cambiar un plazo, un área de Infocorp o una regla de puntaje, se edita `js/rules.js`.
 
-## Antes de usarlo con datos reales
+## Modo demostración y modo conectado
 
-Esta versión guarda la información **en el navegador de cada equipo** (localStorage) y valida las contraseñas en el propio navegador. Sirve para validar el flujo con las jefaturas, pero no para operar: cada computadora tiene sus propios datos y alguien con conocimientos técnicos podría saltarse el inicio de sesión. Para producción:
+- **Modo demostración** (como viene): los datos se guardan en el navegador de cada equipo. Sirve para conocer el flujo; incluye usuarios de prueba con la contraseña `Detecta2026`.
+- **Modo conectado** (para operar): los datos viven en una base de datos compartida en **Supabase**, el inicio de sesión lo valida el servidor y las reglas de acceso y de firmas se aplican allí. La guía paso a paso está en [`docs/SUPABASE.md`](docs/SUPABASE.md); al terminar solo se pegan dos valores en `js/config.js`.
 
-1. **Base de datos compartida.** Reemplazar `load()` y `persist()` de `js/store.js` por una API o un servicio como Supabase o Firebase. El resto de la aplicación no cambia.
-2. **Inicio de sesión en un servidor** (o con el correo institucional: Microsoft 365 o Google Workspace). El rol de cada usuario debe venir del servidor, no del navegador.
-3. **Permisos en el servidor**: que solo GTC y los evaluadores puedan leer las fichas de entrevista, y que nadie pueda modificar una sección firmada.
-4. **Protección de datos (Ley N° 29733).** Los expedientes contienen datos personales de candidatos y colaboradores, y las suplencias pueden aludir a licencias médicas. Se requiere hosting con acceso controlado, cifrado, registro del banco de datos ante la ANPD si corresponde y la autorización de tratamiento de los candidatos. Un repositorio público de GitHub **no** debe contener datos reales: solo el código.
-5. **Firma electrónica.** La firma dibujada más el nombre, la declaración, el usuario autenticado y la huella del contenido constituyen una firma electrónica simple. Si Legal requiere mayor valor probatorio (por ejemplo, para el contrato de trabajo), se puede integrar un proveedor de firma digital acreditado.
-6. **Actualizar los procedimientos** (control de cambios): los registros de estos cuatro formatos pasan de “Físico” a “Digital” y PRC-GTC-02 debe dejar de indicar que la ficha de entrevista se maneja solo en físico.
+En modo conectado:
+- Cada persona ingresa con su usuario y contraseña propios; la Jefatura de GTC crea las cuentas, restablece contraseñas y desactiva usuarios.
+- Una firma registrada no se puede modificar, solo se acepta a nombre de quien está conectado y lleva la hora del servidor.
+- Si dos personas editan el mismo documento, la segunda recibe un aviso y se carga la versión más reciente.
+- Los cambios de otras personas aparecen sin recargar la página.
+- La firma es electrónica simple (trazo, declaración, usuario autenticado, hora del servidor y huella SHA-256 del contenido). La plataforma no se usa para contratos.
+
+### Pendiente de la clínica
+
+- **Protección de datos (Ley N° 29733):** decidir con el área legal la región del servidor, el registro del banco de datos ante la Autoridad Nacional de Protección de Datos Personales si corresponde, y el texto de autorización para candidatos.
+- **Actualizar los procedimientos** (control de cambios): los registros de estos cuatro formatos pasan de "Físico" a "Digital" y PRC-GTC-02 debe dejar de indicar que la ficha de entrevista se maneja solo en físico.
+- El repositorio público de GitHub solo contiene código. Los datos nunca se guardan en GitHub.

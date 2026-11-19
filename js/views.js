@@ -18,7 +18,7 @@ export const go = (hash) => { location.hash = hash; };
 let saveTimer = null;
 import { route, canOpenCase, canOpenMov, caseTabsFor, listHref } from './portal.js';
 const saveSoon = () => { clearTimeout(saveTimer); saveTimer = setTimeout(() => { store.persist(); flashSaved(); }, 350); };
-function flashSaved() { const el = document.getElementById('savestate'); if (el) { el.textContent = `Guardado ${new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}`; el.classList.add('pulse'); setTimeout(() => el.classList.remove('pulse'), 600); } }
+function flashSaved() { if (store.REMOTE) return; const el = document.getElementById('savestate'); if (el) { el.textContent = `Guardado ${new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}`; el.classList.add('pulse'); setTimeout(() => el.classList.remove('pulse'), 600); } }
 
 export function caseMeta(c) { return { ...c, tipoPuesto: c.forms.RQ.data.tipo_puesto }; }
 
@@ -62,11 +62,13 @@ export function viewNew() {
   if (u.role !== 'jefe') {
     return h('div', { class: 'page' }, h('h1', {}, 'Nuevo requerimiento'),
       h('div', { class: 'empty' }, h('p', {}, `Según PRC-GTC-01, el requerimiento lo inicia el Jefe inmediato que necesita cubrir la posición. Estás actuando como ${ROLES[u.role]}.`),
-        h('p', {}, 'Cambia de usuario en el panel izquierdo para probar el flujo como jefatura.')));
+        h('p', {}, 'Ingresa con un usuario de jefatura para iniciar un requerimiento.')));
   }
-  const c = store.createCase(u);
-  setTimeout(() => go(`#/caso/${c.id}`), 0);
-  return h('div', { class: 'page' }, h('p', {}, 'Creando expediente…'));
+  const page = h('div', { class: 'page' }, detectoSays({ mood: 'think', title: 'Creando tu requerimiento…', text: 'Un momento, estoy reservando el código del expediente.' }));
+  store.createCase(u).then((c) => go(`#/caso/${c.id}`)).catch((e) => {
+    page.replaceChildren(detectoSays({ mood: 'worried', title: 'No se pudo crear el requerimiento', text: e.message || String(e), actions: [h('a', { class: 'btn btn-primary', href: '#/' }, 'Volver al inicio')] }));
+  });
+  return page;
 }
 
 export function miniRibbon(c) {
@@ -326,11 +328,13 @@ async function signFlow({ schema, form, sdef, entity, caso, ctx, after }) {
     declaration: sdef.key === cdef.entrega ? cdef.textoEntrega : sdef.key === cdef.recibe ? cdef.textoRecibe : 'Revisé el contenido de este documento y doy mi conformidad.',
   });
   if (!r) return;
-  if (r.saveAsMine) store.saveUser({ ...u, firma: r.img });
+  if (r.saveAsMine) await store.saveMyFirma(r.img);
   const me = store.currentUser();
   const signer = isTablet ? { ...me, id: `tablet:${me.id}`, name: r.signerName, cargo: 'Firmado en tablet · registrado por ' + me.name } : me;
   await sign({ schema, form, sdef, user: signer, img: r.img, decision: r.decision, comment: r.comment, ctx, entity });
+  const saved = await store.flush();
   after();
+  if (!saved) return; // el servidor no aceptó el cambio (ya se mostró el motivo)
   if (r.decision === 'Observado') toast('Lo devolviste con observaciones. Quien lo llenó verá tu comentario.', 'warn');
   else if (r.decision === 'Desaprobado') toast('Vacante desaprobada. El proceso terminó.', 'warn');
   else if (!confBefore && conformidad(schema, form).completa) celebrate({ title: '¡Doble conformidad completa!', text: `${schema.title} quedó cerrado y sellado.` });
@@ -439,8 +443,8 @@ function fichasList(caso) {
     cierre = h('div', { class: 'banner banner-action' },
       h('span', {}, `Proceso cerrado (${fmtDate(sel.at, true)}). Candidato seleccionado: `, h('strong', {}, sel.nombre), '.'),
       sel.origen === 'Interno' ? (mov ? h('a', { class: 'btn btn-ghost btn-sm', href: `#/movimiento/${mov.id}` }, `Abrir ${mov.id}`)
-        : ['analista', 'gtc', 'jefe'].includes(u.role) ? h('button', { class: 'btn btn-primary btn-sm', onclick: () => {
-          const m = store.createMov(u, { colaborador: sel.nombre, dni: sel.dni, posiciones: { 'Área': ['', rq.area], 'Puesto': ['', rq.puesto], 'Jefe directo': ['', rq.jefe_nombre], 'Remuneración (S/)': ['', rq.sal_aprobada], 'Jornada / turno': ['', rq.sistema_trabajo] } }, caso.id);
+        : ['analista', 'gtc', 'jefe'].includes(u.role) ? h('button', { class: 'btn btn-primary btn-sm', onclick: async () => {
+          const m = await store.createMov(u, { colaborador: sel.nombre, dni: sel.dni, posiciones: { 'Área': ['', rq.area], 'Puesto': ['', rq.puesto], 'Jefe directo': ['', rq.jefe_nombre], 'Remuneración (S/)': ['', rq.sal_aprobada], 'Jornada / turno': ['', rq.sistema_trabajo] } }, caso.id);
           store.log(caso, u, `Generó el movimiento interno ${m.id} para ${sel.nombre}.`); store.persist(); go(`#/movimiento/${m.id}`);
         } }, 'Crear movimiento interno') : null) : null);
   } else {
@@ -527,7 +531,7 @@ export function viewMovs() {
   const db = { movimientos: store.getDB().movimientos.filter((m) => canOpenMov(u, m)) };
   return h('div', { class: 'page' },
     h('div', { class: 'block-head' }, h('h1', {}, 'Movimientos internos de personal'),
-      ['analista', 'gtc', 'jefe'].includes(u.role) ? h('button', { class: 'btn btn-primary', onclick: () => { const m = store.createMov(u); go(`#/movimiento/${m.id}`); } }, 'Registrar movimiento') : null),
+      ['analista', 'gtc', 'jefe'].includes(u.role) ? h('button', { class: 'btn btn-primary', onclick: async (e) => { e.target.disabled = true; try { const m = await store.createMov(u); go(`#/movimiento/${m.id}`); } catch (err) { toast(err.message || String(err), 'warn'); e.target.disabled = false; } } }, 'Registrar movimiento') : null),
     h('p', { class: 'muted' }, 'Ascensos, traslados, cambios de puesto o de jornada (GTC.PRS.03). Requieren firma del colaborador, ambas jefaturas y GTC.'),
     db.movimientos.length ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'tbl tbl-list' },
       h('thead', {}, h('tr', {}, ['Código', 'Colaborador', 'Tipo', 'Fecha efectiva', 'Estado'].map((t) => h('th', {}, t)))),
